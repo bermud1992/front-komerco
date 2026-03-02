@@ -37,20 +37,26 @@
     <div class="legend-info">
       <div class="legend-item">
         <div class="legend-color historical"></div>
-        <span>Datos Históricos Reales</span>
+        <span>Datos Reales</span>
       </div>
       <div class="legend-item">
         <div class="legend-color prediction"></div>
-        <span>Predicción Basada en Histórico</span>
+        <span>Predicción (Test)</span>
       </div>
       <div class="legend-item">
         <div class="legend-color projection"></div>
-        <span>Proyección a 16 Semanas</span>
+        <span>Predicción Futura</span>
       </div>
     </div>
-    <div class="accuracy-info">
-      <mat-icon>verified</mat-icon>
-      <span>Precisión del modelo: <strong>94.2%</strong></span>
+    <div class="metrics-info">
+      <div class="metric-badge">
+        <mat-icon>analytics</mat-icon>
+        <span>MAPE: <strong>{{ mape }}%</strong></span>
+      </div>
+      <div class="metric-badge r2-badge">
+        <mat-icon>show_chart</mat-icon>
+        <span>R²: <strong>{{ r2 }}</strong></span>
+      </div>
     </div>
   </div>
 </div>

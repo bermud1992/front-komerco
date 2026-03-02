@@ -83,25 +83,44 @@
   }
 }
 
-.accuracy-info {
+.metrics-info {
+  display: flex;
+  gap: 10px;
+}
+
+.metric-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background-color: #c6f6d5;
+  gap: 6px;
+  padding: 6px 14px;
+  background-color: #ebf8ff;
   border-radius: 20px;
-  
+
   mat-icon {
-    color: #276749;
+    color: #2b6cb0;
     font-size: 18px;
+    width: 18px;
+    height: 18px;
   }
-  
+
   span {
-    color: #276749;
+    color: #2b6cb0;
     font-size: 0.9rem;
-    
+
     strong {
       font-weight: 700;
+    }
+  }
+
+  &.r2-badge {
+    background-color: #fff5f5;
+
+    mat-icon {
+      color: #c53030;
+    }
+
+    span {
+      color: #c53030;
     }
   }
 }
