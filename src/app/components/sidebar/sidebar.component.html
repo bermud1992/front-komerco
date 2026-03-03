@@ -1,7 +1,8 @@
-<mat-sidenav-container class="sidebar-container">
+<mat-sidenav-container class="sidebar-container"
+  [style.width.px]="isCollapsed ? 70 : 280">
   <mat-sidenav mode="side" opened class="sidebar" [style.width.px]="isCollapsed ? 70 : 280">
     <div class="sidebar-header">
-      <h3 *ngIf="!isCollapsed">Herramientas</h3>
+      <h3 *ngIf="!isCollapsed">Panel de Control</h3>
       <button mat-icon-button (click)="toggleCollapse()" class="collapse-button">
         <mat-icon>{{ isCollapsed ? 'chevron_right' : 'chevron_left' }}</mat-icon>
       </button>
@@ -126,16 +127,16 @@
           Acciones Rápidas
         </h4>
         <button mat-stroked-button class="quick-action">
-          <mat-icon>history</mat-icon>
-          Historial
-        </button>
-        <button mat-stroked-button class="quick-action">
           <mat-icon>download</mat-icon>
-          Exportar
+          Exportar Reporte
         </button>
         <button mat-stroked-button class="quick-action">
-          <mat-icon>notifications</mat-icon>
-          Alertas
+          <mat-icon>notifications_active</mat-icon>
+          Alertas DOH
+        </button>
+        <button mat-stroked-button class="quick-action">
+          <mat-icon>sync</mat-icon>
+          Sincronizar Retail Link
         </button>
       </div>
     </div>

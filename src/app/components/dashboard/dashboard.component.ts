@@ -1,5 +1,7 @@
-import { Component, OnInit, ViewChild, AfterViewInit, ChangeDetectorRef } from '@angular/core';
-import { DataService, CSVProduct, HighlightedPrediction } from '../../services/data.service';
+import { Component, OnInit, OnDestroy, ViewChild, AfterViewInit, ChangeDetectorRef } from '@angular/core';
+import { Subscription } from 'rxjs';
+import { DataService, CSVProduct, DohLevel } from '../../services/data.service';
+import { NavigationService } from '../../services/navigation.service';
 import { Product } from '../../models/product.model';
 import { MatTableDataSource } from '@angular/material/table';
 import { MatSort } from '@angular/material/sort';
@@ -12,134 +14,107 @@ import { PredictionDialogComponent } from '../dialogs/prediction-dialog/predicti
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
-export class DashboardComponent implements OnInit, AfterViewInit {
-  @ViewChild(MatSort) sort!: MatSort;
+export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild(MatSort)     sort!:     MatSort;
   @ViewChild(MatPaginator) paginator!: MatPaginator;
-  
-  // Estado de la aplicación
-  isRightPanelCollapsed: boolean = false;
-  isPredictionsCollapsed: boolean = false;
-  isProductsCollapsed: boolean = false;
-  
-  // Gestión de vistas
-  viewMode: 'table' | 'csv' | 'prediction' | 'welcome' = 'welcome';
-  
-  // Productos
-  selectedProduct: Product | null = null;
-  csvProducts: CSVProduct[] = [];
-  isLoading: boolean = false;
-  allProducts: Product[] = [];
-  
-  // Tabla
+
+  // ── Estado general ──────────────────────────────────────────────────────
+  viewMode: 'operativo' | 'table' | 'csv' | 'prediction' | 'welcome' = 'operativo';
+
+  // ── Datos ───────────────────────────────────────────────────────────────
+  selectedProduct:  Product | null = null;
+  csvProducts:      CSVProduct[]   = [];
+  isLoading:        boolean        = false;
+  allProducts:      Product[]      = [];
+
+  // ── Tabla de inventario general ─────────────────────────────────────────
   displayedColumns: string[] = ['id', 'name', 'category', 'currentStock', 'weeklyDemand', 'price', 'trend', 'actions'];
   dataSource = new MatTableDataSource<Product>();
-  
-  // Estadísticas
-  totalProducts: number = 0;
-  csvStats = {
-    total: 0,
-    categories: [] as string[],
-    categoryCounts: new Map<string, number>()
-  };
-  
-  // Predicciones destacadas
-  highlightedPredictions: HighlightedPrediction[] = [
-    {
-      productId: 'PROD-001',
-      productName: 'Cuaderno Profesional A4',
-      currentDemand: 320,
-      predictedDemand: 425,
-      changePercent: 32.8,
-      confidence: 94.2,
-      riskLevel: 'low',
-      recommendation: 'Aumentar stock en 20%'
-    },
-    {
-      productId: 'PROD-003',
-      productName: 'Resma Papel A4 80gr',
-      currentDemand: 45,
-      predictedDemand: 68,
-      changePercent: 51.1,
-      confidence: 87.5,
-      riskLevel: 'medium',
-      recommendation: 'Revisar inventario semanal'
-    },
-    {
-      productId: 'PROD-002',
-      productName: 'Bolígrafo Azul Premium',
-      currentDemand: 850,
-      predictedDemand: 920,
-      changePercent: 8.2,
-      confidence: 96.8,
-      riskLevel: 'low',
-      recommendation: 'Mantener niveles actuales'
-    },
-    {
-      productId: 'CSV-001',
-      productName: 'Plastilina Rosa',
-      currentDemand: 150,
-      predictedDemand: 210,
-      changePercent: 40.0,
-      confidence: 82.3,
-      riskLevel: 'high',
-      recommendation: 'Pedido urgente necesario'
-    },
-    {
-      productId: 'CSV-005',
-      productName: 'Abaco Escolar',
-      currentDemand: 45,
-      predictedDemand: 75,
-      changePercent: 66.7,
-      confidence: 79.5,
-      riskLevel: 'medium',
-      recommendation: 'Programar reabastecimiento'
-    },
-    {
-      productId: 'CSV-012',
-      productName: 'Estuche Acuarela',
-      currentDemand: 85,
-      predictedDemand: 120,
-      changePercent: 41.2,
-      confidence: 88.9,
-      riskLevel: 'medium',
-      recommendation: 'Incrementar pedido mensual'
-    }
-  ];
 
-  // Filtros
-  searchTerm: string = '';
+  // ── Semáforo DOH (E01) ──────────────────────────────────────────────────
+  dohColumns: string[] = ['name', 'category', 'doh', 'semaphore', 'inStockPct'];
+  categoryFilter: string = 'all';
+  dohCategories:  string[] = [];
+
+  // ── KPIs (E02) ──────────────────────────────────────────────────────────
+  globalInStock: number = 0;
+  avgDoh:        number = 0;
+  dohDistribution = { red: 0, orange: 0, yellow: 0, green: 0 };
+  criticalCount:   number = 0;   // artículos en rojo
+
+  // ── Top 10 Críticos chart (E03) ─────────────────────────────────────────
+  top10ChartOptions: any;
+  top10Products: Product[] = [];
+
+  // ── Filtros tabla general ────────────────────────────────────────────────
+  searchTerm:       string = '';
   selectedCategory: string = 'all';
-  categories: string[] = [];
-  
-  // Paginación
-  pageSize = 10;
+  categories:       string[] = [];
+
+  // ── Suscripción de navegación ────────────────────────────────────────────
+  private navSub!: Subscription;
+
+  // ── Stats CSV ────────────────────────────────────────────────────────────
+  totalProducts: number = 0;
+  csvStats = { total: 0, categories: [] as string[], categoryCounts: new Map<string, number>() };
+
+  // ── Paginación ────────────────────────────────────────────────────────────
+  pageSize    = 10;
   currentPage = 1;
-  totalPages = 1;
+  totalPages  = 1;
 
   constructor(
     private dataService: DataService,
-    private dialog: MatDialog,
-    private cdr: ChangeDetectorRef
+    private navService:  NavigationService,
+    private dialog:      MatDialog,
+    private cdr:         ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
     this.loadData();
     this.setupSubscriptions();
     this.initializeDefaultProduct();
+
+    // Suscribirse al NavigationService — el header controla la vista
+    this.navSub = this.navService.view$.subscribe(view => {
+      // Si piden CSV pero no hay productos cargados, volver a operativo
+      if (view === 'csv' && this.csvProducts.length === 0) {
+        this.navService.navigateTo('operativo');
+        return;
+      }
+      this.viewMode = view;
+      if (view !== 'prediction') this.selectedProduct = null;
+    });
   }
 
-  ngAfterViewInit() {
-    this.dataSource.sort = this.sort;
+  ngOnDestroy(): void {
+    this.navSub?.unsubscribe();
+  }
+
+  ngAfterViewInit(): void {
+    this.dataSource.sort      = this.sort;
     this.dataSource.paginator = this.paginator;
     this.cdr.detectChanges();
   }
 
+  // ── Carga de datos ────────────────────────────────────────────────────────
   private loadData(): void {
     this.allProducts = this.dataService.getAllProducts();
     this.dataSource.data = this.allProducts;
-    this.totalProducts = this.allProducts.length;
+    this.totalProducts   = this.allProducts.length;
     this.updateCategories();
     this.applyTableFilters();
+    this.refreshKPIs();
+  }
+
+  private refreshKPIs(): void {
+    this.globalInStock    = this.dataService.getGlobalInStock();
+    this.avgDoh           = this.dataService.getAvgDoh();
+    this.dohDistribution  = this.dataService.getDohDistribution();
+    this.criticalCount    = this.dohDistribution.red;
+    this.top10Products    = this.dataService.getTop10Critical();
+    this.dohCategories    = ['all', ...new Set(this.allProducts.map(p => p.category)).values()].sort();
+    this.buildTop10Chart();
   }
 
   private setupSubscriptions(): void {
@@ -147,18 +122,15 @@ export class DashboardComponent implements OnInit, AfterViewInit {
       this.csvProducts = products;
       if (products.length > 0) {
         this.updateCSVStats();
-        if (this.viewMode === 'welcome') {
-          this.viewMode = 'csv';
-        }
       }
     });
-
     this.dataService.products$.subscribe(products => {
-      this.allProducts = products;
+      this.allProducts     = products;
       this.dataSource.data = products;
-      this.totalProducts = products.length;
+      this.totalProducts   = products.length;
       this.updateCategories();
       this.applyTableFilters();
+      this.refreshKPIs();
     });
   }
 
@@ -168,175 +140,241 @@ export class DashboardComponent implements OnInit, AfterViewInit {
     }
   }
 
-  // Manejo de vistas
-  onFileUploaded(): void {
-    this.viewMode = 'csv';
-    this.selectedProduct = null;
+  // ── Semáforo DOH (E01) ────────────────────────────────────────────────────
+  get filteredDohProducts(): Product[] {
+    if (this.categoryFilter === 'all') return this.allProducts;
+    return this.allProducts.filter(p => p.category === this.categoryFilter);
   }
+
+  getDohChipClass(doh: number): string {
+    const level = this.dataService.getDohSemaphore(doh);
+    return `chip-${level}`;
+  }
+
+  getDohRowClass(doh: number): string {
+    const level = this.dataService.getDohSemaphore(doh);
+    return `row-${level}`;
+  }
+
+  getDohLabel(doh: number): string {
+    const level = this.dataService.getDohSemaphore(doh);
+    const labels: Record<DohLevel, string> = { red: 'ROJO', orange: 'NARANJA', yellow: 'AMARILLO', green: 'VERDE' };
+    return labels[level];
+  }
+
+  getInStockChipClass(pct: number): string {
+    const level = this.dataService.getInStockSemaphore(pct);
+    return `chip-${level}`;
+  }
+
+  get inStockSemaphoreClass(): string {
+    return `chip-${this.dataService.getInStockSemaphore(this.globalInStock)}`;
+  }
+
+  // ── Top 10 Críticos chart (E03) ───────────────────────────────────────────
+  private buildTop10Chart(): void {
+    const top10 = this.top10Products;
+    const names  = top10.map(p => p.name.length > 28 ? p.name.substring(0, 26) + '…' : p.name);
+    const values = top10.map(p => p.doh);
+    const colors = top10.map(p => {
+      const l = this.dataService.getDohSemaphore(p.doh);
+      return l === 'red' ? '#FC8181' : l === 'orange' ? '#F6AD55' : '#F6E05E';
+    });
+
+    this.top10ChartOptions = {
+      series: [{ name: 'DOH (días)', data: values }],
+      chart:  { type: 'bar', height: 320, toolbar: { show: false }, animations: { enabled: false } },
+      plotOptions: {
+        bar: {
+          horizontal:       true,
+          distributed:      true,
+          borderRadius:     4,
+          dataLabels:       { position: 'center' }
+        }
+      },
+      colors,
+      dataLabels: {
+        enabled:   true,
+        formatter: (val: number) => `${val} días`,
+        style:     { fontSize: '12px', colors: ['#2d3748'] }
+      },
+      xaxis: {
+        categories: names,
+        min: 0,
+        max: 75,
+        title:  { text: 'Días de Inventario (DOH)' },
+        labels: { style: { fontSize: '11px' } }
+      },
+      yaxis: { labels: { style: { fontSize: '11px' }, maxWidth: 160 } },
+      legend: { show: false },
+      tooltip: {
+        y: {
+          formatter: (val: number, opts: any) => {
+            const p = top10[opts.dataPointIndex];
+            return `${val} días | InStock: ${p?.inStockPct}%`;
+          }
+        }
+      },
+      annotations: {
+        xaxis: [{
+          x:            70,
+          borderColor:  '#38A169',
+          strokeDashArray: 4,
+          label: {
+            text:  'Objetivo WM 70d',
+            style: { color: '#276749', fontSize: '11px', background: '#C6F6D5' }
+          }
+        }]
+      },
+      grid: { xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } }
+    };
+  }
+
+  // ── Navegación de vistas ──────────────────────────────────────────────────
+  onFileUploaded(): void { this.navService.navigateTo('csv'); }
 
   onPredict(): void {
     if (this.selectedProduct) {
       this.isLoading = true;
-      this.viewMode = 'prediction';
-      
-      setTimeout(() => {
-        this.isLoading = false;
-      }, 1000);
+      this.navService.navigateTo('prediction');
+      setTimeout(() => { this.isLoading = false; }, 800);
     }
   }
 
-  switchToTableView(): void {
-    this.viewMode = 'table';
-    this.selectedProduct = null;
-    this.clearTableFilters();
-  }
+  switchToOperativoView(): void { this.navService.navigateTo('operativo'); }
+  switchToTableView():     void { this.clearTableFilters(); this.navService.navigateTo('table'); }
+  switchToCSVView():       void { if (this.csvProducts.length > 0) this.navService.navigateTo('csv'); }
 
-  switchToCSVView(): void {
-    if (this.csvProducts.length > 0) {
-      this.viewMode = 'csv';
-      this.selectedProduct = null;
-    }
-  }
-
-  switchToWelcomeView(): void {
-    this.viewMode = 'welcome';
-    this.selectedProduct = null;
-  }
-
-  // Métodos de tabla
+  // ── Tabla de inventario ───────────────────────────────────────────────────
   applyTableFilters(): void {
     let filtered = this.allProducts;
-    
     if (this.searchTerm) {
-      const term = this.searchTerm.toLowerCase();
-      filtered = filtered.filter(product => 
-        product.name.toLowerCase().includes(term) ||
-        product.id.toLowerCase().includes(term) ||
-        product.category.toLowerCase().includes(term)
+      const t = this.searchTerm.toLowerCase();
+      filtered = filtered.filter(p =>
+        p.name.toLowerCase().includes(t) || p.id.toLowerCase().includes(t) || p.category.toLowerCase().includes(t)
       );
     }
-    
     if (this.selectedCategory !== 'all') {
-      filtered = filtered.filter(product => product.category === this.selectedCategory);
+      filtered = filtered.filter(p => p.category === this.selectedCategory);
     }
-    
     this.dataSource.data = filtered;
-    this.totalProducts = filtered.length;
+    this.totalProducts   = filtered.length;
     this.updatePagination();
   }
 
-  clearTableFilters(): void {
-    this.searchTerm = '';
-    this.selectedCategory = 'all';
-    this.applyTableFilters();
-  }
+  clearTableFilters(): void { this.searchTerm = ''; this.selectedCategory = 'all'; this.applyTableFilters(); }
 
   updateCategories(): void {
-    const uniqueCategories = new Set<string>();
-    this.allProducts.forEach(product => {
-      uniqueCategories.add(product.category);
-    });
-    this.categories = Array.from(uniqueCategories).sort();
+    this.categories = [...new Set(this.allProducts.map(p => p.category))].sort();
   }
 
   selectProduct(product: Product): void {
     this.selectedProduct = product;
-    this.viewMode = 'prediction';
+    this.navService.navigateTo('prediction');
   }
 
-  selectFromHighlighted(prediction: HighlightedPrediction): void {
-    const product = this.allProducts.find(p => p.id === prediction.productId);
-    if (product) {
-      this.selectedProduct = product;
-      this.viewMode = 'prediction';
-    }
-  }
-
-  // Métodos de CSV
+  // ── CSV ───────────────────────────────────────────────────────────────────
   updateCSVStats(): void {
-    const categories = new Set<string>();
+    const categories    = new Set<string>();
     const categoryCounts = new Map<string, number>();
-    
-    this.csvProducts.forEach(product => {
-      const category = product.category || 'Sin categoría';
-      categories.add(category);
-      const count = categoryCounts.get(category) || 0;
-      categoryCounts.set(category, count + 1);
+    this.csvProducts.forEach(p => {
+      const cat = p.category || 'Sin categoría';
+      categories.add(cat);
+      categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
     });
-    
-    this.csvStats = {
-      total: this.csvProducts.length,
-      categories: Array.from(categories).sort(),
-      categoryCounts: categoryCounts
-    };
-  }
-
-  // Análisis y predicciones
-  onAnalyze(): void {
-    if (this.selectedProduct) {
-      this.isLoading = true;
-      
-      setTimeout(() => {
-        this.isLoading = false;
-        this.openPredictionDialog();
-      }, 1500);
-    }
-  }
-
-  openPredictionDialog(): void {
-    const dialogRef = this.dialog.open(PredictionDialogComponent, {
-      width: '800px',
-      data: {
-        product: this.selectedProduct,
-        predictions: this.generateDetailedPredictions()
-      }
-    });
-
-    dialogRef.afterClosed().subscribe(result => {
-      if (result) {
-        console.log('Análisis guardado:', result);
-      }
-    });
+    this.csvStats = { total: this.csvProducts.length, categories: Array.from(categories).sort(), categoryCounts };
   }
 
   generatePredictions(): void {
     this.isLoading = true;
-    
     setTimeout(() => {
       this.isLoading = false;
-      this.highlightedPredictions = this.generateNewPredictions();
       alert(`Análisis predictivo completado para ${this.csvProducts.length} productos`);
     }, 2000);
   }
 
+  exportAnalysis(): void {
+    const data = { products: this.csvProducts, generatedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url  = window.URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `analisis-kmco-${Date.now()}.json`; a.click();
+    window.URL.revokeObjectURL(url);
+  }
+
+  onAnalyze(): void {
+    if (this.selectedProduct) {
+      this.isLoading = true;
+      setTimeout(() => { this.isLoading = false; this.openPredictionDialog(); }, 1200);
+    }
+  }
+
+  openPredictionDialog(): void {
+    this.dialog.open(PredictionDialogComponent, {
+      width: '800px',
+      data: { product: this.selectedProduct, predictions: this.generateDetailedPredictions() }
+    });
+  }
+
   analyzeTrends(): void {
     this.isLoading = true;
-    
     setTimeout(() => {
       this.isLoading = false;
-      this.showTrendAnalysis();
-    }, 1500);
+      this.dialog.open(PredictionDialogComponent, {
+        width: '900px',
+        data: { title: 'Análisis de Tendencias', type: 'trends', trends: this.generateTrendAnalysis() }
+      });
+    }, 1200);
   }
 
-  exportAnalysis(): void {
-    const data = {
-      products: this.csvProducts,
-      predictions: this.highlightedPredictions,
-      generatedAt: new Date().toISOString()
-    };
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `analisis-productos-${new Date().getTime()}.json`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-    
-    alert('Análisis exportado exitosamente');
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  getChangeColor(percent: number): string {
+    return percent >= 40 ? '#e53e3e' : percent >= 25 ? '#d69e2e' : percent >= 10 ? '#38a169' : '#718096';
   }
 
-  // Métodos auxiliares
+  getTrendIcon(trend: number):  string { return trend > 10 ? 'trending_up' : trend < -10 ? 'trending_down' : 'trending_flat'; }
+  getTrendColor(trend: number): string { return trend > 10 ? '#e53e3e' : trend < -10 ? '#38a169' : '#718096'; }
+
+  // ── Paginación ────────────────────────────────────────────────────────────
+  get paginatedProducts(): Product[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.dataSource.data.slice(start, start + this.pageSize);
+  }
+
+  get totalFilteredProducts(): number { return this.dataSource.data.length; }
+
+  prevPage(): void { if (this.currentPage > 1) this.currentPage--; }
+  nextPage(): void { if (this.currentPage < this.totalPages) this.currentPage++; }
+
+  goToPage(page: number): void { if (page >= 1 && page <= this.totalPages) this.currentPage = page; }
+
+  getPageNumbers(): number[] {
+    const max = 5;
+    let start = Math.max(1, this.currentPage - Math.floor(max / 2));
+    let end   = Math.min(start + max - 1, this.totalPages);
+    start     = Math.max(1, end - max + 1);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
+
+  updatePagination(): void {
+    this.totalPages  = Math.ceil(this.totalFilteredProducts / this.pageSize);
+    if (this.currentPage > this.totalPages) this.currentPage = 1;
+  }
+
+  copyToClipboard(text: string): void {
+    navigator.clipboard.writeText(text).catch(err => console.error('Error al copiar:', err));
+  }
+
+  get currentDate(): Date { return new Date(); }
+
+  resetApplication(): void {
+    this.selectedProduct = null; this.csvProducts = [];
+    this.searchTerm = ''; this.selectedCategory = 'all'; this.currentPage = 1;
+    this.isLoading = false; this.loadData();
+    this.navService.navigateTo('operativo');
+  }
+
+  // ── Helpers privados ──────────────────────────────────────────────────────
   private generateDetailedPredictions(): any {
     return {
       weeklyForecast: Array.from({ length: 12 }, (_, i) => ({
@@ -351,265 +389,25 @@ export class DashboardComponent implements OnInit, AfterViewInit {
       ],
       riskFactors: [
         'Demanda estacional alta en próximos meses',
-        'Posible escasez de materia prima',
-        'Competencia incrementando precios'
+        'Posible escasez de materia prima'
       ]
     };
-  }
-
-  private generateNewPredictions(): HighlightedPrediction[] {
-    const newPredictions = [...this.highlightedPredictions];
-    
-    // Agregar predicciones para productos CSV
-    this.csvProducts.slice(0, 3).forEach((product, index) => {
-      const changePercent = Math.floor(Math.random() * 50) + 10;
-      const confidence = 75 + Math.random() * 20;
-      
-      newPredictions.push({
-        productId: `CSV-${String(index + 100).padStart(3, '0')}`,
-        productName: product.cleanName || product.descripcion.substring(0, 30) + '...',
-        currentDemand: Math.floor(Math.random() * 200) + 50,
-        predictedDemand: Math.floor(Math.random() * 300) + 100,
-        changePercent: parseFloat(changePercent.toFixed(1)),
-        confidence: parseFloat(confidence.toFixed(1)),
-        riskLevel: confidence > 85 ? 'low' : confidence > 75 ? 'medium' : 'high',
-        recommendation: this.getPredictionRecommendation(changePercent, confidence)
-      });
-    });
-    
-    return newPredictions;
-  }
-
-  // Función renombrada para evitar duplicación
-  private getPredictionRecommendation(change: number, confidence: number): string {
-    if (change > 40 && confidence > 80) {
-      return 'Aumentar stock significativamente';
-    } else if (change > 25 && confidence > 70) {
-      return 'Incrementar pedidos regulares';
-    } else if (change < 10 && confidence > 85) {
-      return 'Reducir inventario';
-    } else {
-      return 'Mantener niveles actuales';
-    }
-  }
-
-  private showTrendAnalysis(): void {
-    const dialogRef = this.dialog.open(PredictionDialogComponent, {
-      width: '900px',
-      data: {
-        title: 'Análisis de Tendencias',
-        type: 'trends',
-        trends: this.generateTrendAnalysis()
-      }
-    });
   }
 
   private generateTrendAnalysis(): any {
     const categories = new Map<string, number>();
-    this.csvProducts.forEach(product => {
-      const category = product.category || 'Sin categoría';
-      const count = categories.get(category) || 0;
-      categories.set(category, count + 1);
+    this.csvProducts.forEach(p => {
+      const cat = p.category || 'Sin categoría';
+      categories.set(cat, (categories.get(cat) || 0) + 1);
     });
-    
     const categoryDistribution = Array.from(categories.entries()).map(([name, count]) => ({
-      name,
-      count,
-      percentage: (count / this.csvProducts.length * 100).toFixed(1)
+      name, count, percentage: (count / this.csvProducts.length * 100).toFixed(1)
     }));
-    
     return {
       totalProducts: this.csvProducts.length,
-      categoryDistribution: categoryDistribution,
-      topProducts: this.csvProducts.slice(0, 10).map(p => ({
-        name: p.cleanName || p.descripcion,
-        upc: p.upc,
-        category: p.category || 'Sin categoría'
-      })),
-      recommendations: [
-        'Enfocar análisis en productos de categoría "Arte" que representan el 35% del inventario',
-        'Considerar reducción de productos de categoría "Otros" con baja rotación',
-        'Implementar análisis de precio óptimo para productos de alta demanda'
-      ]
+      categoryDistribution,
+      topProducts: this.csvProducts.slice(0, 10).map(p => ({ name: p.cleanName || p.descripcion, upc: p.upc, category: p.category || 'Sin categoría' })),
+      recommendations: ['Enfocar en categorías de alta rotación: Escritura y Manualidades']
     };
-  }
-
-  // Métodos de UI
-  getRiskColor(riskLevel: string): string {
-    switch (riskLevel) {
-      case 'low': return '#38a169';
-      case 'medium': return '#d69e2e';
-      case 'high': return '#e53e3e';
-      default: return '#718096';
-    }
-  }
-
-  getChangeColor(percent: number): string {
-    if (percent >= 40) return '#e53e3e';
-    if (percent >= 25) return '#d69e2e';
-    if (percent >= 10) return '#38a169';
-    return '#718096';
-  }
-
-  getTrendIcon(trend: number): string {
-    if (trend > 10) return 'trending_up';
-    if (trend < -10) return 'trending_down';
-    return 'trending_flat';
-  }
-
-  getTrendColor(trend: number): string {
-    if (trend > 10) return '#e53e3e';
-    if (trend < -10) return '#38a169';
-    return '#718096';
-  }
-
-  toggleRightPanel(): void {
-    this.isRightPanelCollapsed = !this.isRightPanelCollapsed;
-  }
-
-  togglePredictionsSection(): void {
-    this.isPredictionsCollapsed = !this.isPredictionsCollapsed;
-  }
-
-  toggleProductsSection(): void {
-    this.isProductsCollapsed = !this.isProductsCollapsed;
-  }
-
-  // Paginación
-  get paginatedProducts(): Product[] {
-    const startIndex = (this.currentPage - 1) * this.pageSize;
-    const endIndex = startIndex + this.pageSize;
-    return this.dataSource.data.slice(startIndex, endIndex);
-  }
-
-  get totalFilteredProducts(): number {
-    return this.dataSource.data.length;
-  }
-
-  prevPage(): void {
-    if (this.currentPage > 1) {
-      this.currentPage--;
-    }
-  }
-
-  nextPage(): void {
-    if (this.currentPage < this.totalPages) {
-      this.currentPage++;
-    }
-  }
-
-  goToPage(page: number): void {
-    if (page >= 1 && page <= this.totalPages) {
-      this.currentPage = page;
-    }
-  }
-
-  getPageNumbers(): number[] {
-    const pages: number[] = [];
-    const maxPagesToShow = 5;
-    
-    let startPage = Math.max(1, this.currentPage - Math.floor(maxPagesToShow / 2));
-    let endPage = startPage + maxPagesToShow - 1;
-    
-    if (endPage > this.totalPages) {
-      endPage = this.totalPages;
-      startPage = Math.max(1, endPage - maxPagesToShow + 1);
-    }
-    
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(i);
-    }
-    
-    return pages;
-  }
-
-  updatePagination(): void {
-    this.totalPages = Math.ceil(this.totalFilteredProducts / this.pageSize);
-    if (this.currentPage > this.totalPages) {
-      this.currentPage = 1;
-    }
-  }
-
-  // Métodos para el panel derecho
-  getCategoryDistribution(): Array<{name: string, count: number, percentage: number}> {
-    const distribution = [];
-    for (const [category, count] of this.csvStats.categoryCounts) {
-      const percentage = (count / this.csvStats.total) * 100;
-      distribution.push({
-        name: category,
-        count,
-        percentage: parseFloat(percentage.toFixed(1))
-      });
-    }
-    return distribution.sort((a, b) => b.count - a.count);
-  }
-
-  getInventoryValue(): number {
-    return this.allProducts.reduce((total, product) => {
-      return total + (product.currentStock * product.price);
-    }, 0);
-  }
-
-  getAverageDemand(): number {
-    if (this.allProducts.length === 0) return 0;
-    const totalDemand = this.allProducts.reduce((sum, product) => sum + product.weeklyDemand, 0);
-    return Math.round(totalDemand / this.allProducts.length);
-  }
-
-  getLowStockProducts(): Product[] {
-    return this.allProducts.filter(product => {
-      const weeksOfSupply = product.currentStock / product.weeklyDemand;
-      return weeksOfSupply < 2;
-    }).slice(0, 5);
-  }
-
-  // Métodos para CSV Viewer
-  copyToClipboard(text: string): void {
-    navigator.clipboard.writeText(text).then(() => {
-      console.log('Texto copiado:', text);
-    }).catch(err => {
-      console.error('Error al copiar:', err);
-    });
-  }
-
-  // Método para obtener la fecha actual formateada
-  get currentDate(): Date {
-    return new Date();
-  }
-
-  // Método para resetear la aplicación
-  resetApplication(): void {
-    this.viewMode = 'welcome';
-    this.selectedProduct = null;
-    this.csvProducts = [];
-    this.searchTerm = '';
-    this.selectedCategory = 'all';
-    this.currentPage = 1;
-    this.isLoading = false;
-    this.loadData();
-  }
-
-  // Método auxiliar para el PredictionDialog - AHORA ÚNICO
-  getRecommendationForDialog(predicted: number, confidence: number): string {
-    if (predicted > 400 && confidence > 90) {
-      return 'Aumentar producción significativamente';
-    } else if (predicted > 250 && confidence > 80) {
-      return 'Incrementar inventario de seguridad';
-    } else if (predicted < 100 && confidence > 85) {
-      return 'Considerar reducción de stock';
-    } else {
-      return 'Mantener niveles actuales';
-    }
-  }
-
-  // Método para manejar drop de archivos (si es necesario)
-  handleDrop(event: DragEvent): void {
-    event.preventDefault();
-    const files = event.dataTransfer?.files;
-    if (files && files.length > 0) {
-      // Simular el cambio de archivo
-      console.log('Archivo arrastrado:', files[0].name);
-      // Aquí podrías llamar al método de carga del sidebar
-    }
   }
 }

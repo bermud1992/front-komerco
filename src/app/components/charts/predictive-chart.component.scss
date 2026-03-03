@@ -1,146 +1,163 @@
+/* ══════════════════════════════════════════════════════════════════════
+   IA Kommerco × Walmart — Predictive Chart
+   Brand accent: Walmart Blue #0071CE | Navy #0F2044
+   ══════════════════════════════════════════════════════════════════════ */
+
 .chart-container {
-  background: white;
+  background: #FFFFFF;
   border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  padding: 24px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.05);
+  border: 1px solid #E2E8F0;
+  /* Walmart Blue top accent bar */
+  border-top: 3px solid #0071CE;
 }
 
+/* ── Header ─────────────────────────────────────────────────────────── */
 .chart-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 20px;
-  
+
   h3 {
-    color: #2d3748;
-    margin: 0;
-    font-size: 1.4rem;
+    color: #0F2044;
+    margin: 0 0 4px;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.2px;
   }
-  
+
   p {
     color: #718096;
-    margin: 5px 0 0 0;
-    font-size: 0.95rem;
+    margin: 0;
+    font-size: 0.88rem;
   }
 }
 
 .chart-controls {
   display: flex;
-  gap: 10px;
-  
+  gap: 8px;
+
   button {
+    border-color: #E2E8F0 !important;
+    color: #4A5568 !important;
+    border-radius: 8px !important;
+    font-size: 0.82rem;
+
     mat-icon {
-      margin-right: 8px;
-      font-size: 18px;
+      margin-right: 6px;
+      font-size: 17px;
+    }
+
+    &:hover {
+      background: #EBF4FF !important;
+      border-color: #0071CE !important;
+      color: #0071CE !important;
     }
   }
 }
 
+/* ── Chart canvas ───────────────────────────────────────────────────── */
 #chart {
-  margin: 20px 0;
+  margin: 16px 0;
 }
 
+/* ── Footer ─────────────────────────────────────────────────────────── */
 .chart-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #e2e8f0;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #EDF2F7;
 }
 
+/* ── Legend ─────────────────────────────────────────────────────────── */
 .legend-info {
   display: flex;
-  gap: 20px;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  
+
   .legend-color {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     border-radius: 3px;
-    
-    &.historical {
-      background-color: #3182CE;
-    }
-    
-    &.prediction {
-      background-color: #38A169;
-    }
-    
-    &.projection {
-      background-color: #DD6B20;
-    }
+
+    &.historical { background: #3182CE; }
+    &.prediction { background: #38A169; }
+    &.projection { background: #DD6B20; }
   }
-  
+
   span {
-    color: #4a5568;
-    font-size: 0.9rem;
+    color: #4A5568;
+    font-size: 0.85rem;
   }
 }
 
+/* ── Metric badges ──────────────────────────────────────────────────── */
 .metrics-info {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .metric-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  background-color: #ebf8ff;
+  padding: 5px 14px;
+  background: #EBF4FF;
   border-radius: 20px;
+  border: 1px solid #BEE3F8;
 
   mat-icon {
-    color: #2b6cb0;
-    font-size: 18px;
-    width: 18px;
-    height: 18px;
+    color: #0071CE;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
   }
 
   span {
-    color: #2b6cb0;
-    font-size: 0.9rem;
+    color: #0055A5;
+    font-size: 0.85rem;
 
-    strong {
-      font-weight: 700;
-    }
+    strong { font-weight: 700; }
   }
 
   &.r2-badge {
-    background-color: #fff5f5;
+    background: #FFF5F5;
+    border-color: #FEB2B2;
 
-    mat-icon {
-      color: #c53030;
-    }
-
-    span {
-      color: #c53030;
-    }
+    mat-icon { color: #C53030; }
+    span     { color: #9B2C2C; }
   }
 }
 
-/* Responsive adjustments */
+/* ── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .chart-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 15px;
+    gap: 14px;
   }
-  
+
   .chart-footer {
     flex-direction: column;
-    gap: 15px;
+    gap: 14px;
     align-items: flex-start;
   }
-  
+
   .legend-info {
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
+
+  .metrics-info { flex-direction: column; }
 }

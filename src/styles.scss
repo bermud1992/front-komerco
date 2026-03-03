@@ -1,24 +1,30 @@
-/* Import Angular Material theme */
+/* ══════════════════════════════════════════════════════════════════════
+   IA Kommerco × Walmart — Global Styles
+   Brand palette: Navy #0F2044 | Walmart Blue #0071CE | Light Blue #41B6E6
+   ══════════════════════════════════════════════════════════════════════ */
 @use '@angular/material' as mat;
 @include mat.core();
 
-$primary-palette: mat.define-palette(mat.$indigo-palette);
-$accent-palette: mat.define-palette(mat.$teal-palette, A200, A100, A400);
-$warn-palette: mat.define-palette(mat.$red-palette);
+/* Material theme: Blue palette (aligned to Walmart blue family) */
+$primary-palette: mat.define-palette(mat.$blue-palette, 800, 600, 900);
+$accent-palette:  mat.define-palette(mat.$cyan-palette, A400, A200, A700);
+$warn-palette:    mat.define-palette(mat.$red-palette);
 
 $theme: mat.define-light-theme((
   color: (
     primary: $primary-palette,
-    accent: $accent-palette,
-    warn: $warn-palette,
+    accent:  $accent-palette,
+    warn:    $warn-palette,
   ),
-  typography: mat.define-typography-config(),
+  typography: mat.define-typography-config(
+    $font-family: '"Roboto", "Helvetica Neue", sans-serif',
+  ),
   density: 0,
 ));
 
 @include mat.all-component-themes($theme);
 
-/* Global styles */
+/* ── Reset ──────────────────────────────────────────────────────────── */
 * {
   margin: 0;
   padding: 0;
@@ -31,118 +37,99 @@ html, body {
 
 body {
   font-family: 'Roboto', 'Helvetica Neue', sans-serif;
-  background-color: #f5f7fa;
-  color: #333;
+  background-color: #EEF2F7;
+  color: #1A202C;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── Scrollbar — Walmart Blue ───────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #EEF2F7;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  background: #0071CE;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #0055A5;
+}
+
+/* ── Utility classes ────────────────────────────────────────────────── */
 .container {
   padding: 20px;
-  max-width: 1400px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+.text-center { text-align: center; }
 
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-/* Utility classes */
-.text-center {
-  text-align: center;
-}
-
-.mt-1 { margin-top: 4px; }
-.mt-2 { margin-top: 8px; }
+.mt-1 { margin-top:  4px; }
+.mt-2 { margin-top:  8px; }
 .mt-3 { margin-top: 16px; }
 .mt-4 { margin-top: 24px; }
 .mt-5 { margin-top: 32px; }
 
-.mb-1 { margin-bottom: 4px; }
-.mb-2 { margin-bottom: 8px; }
+.mb-1 { margin-bottom:  4px; }
+.mb-2 { margin-bottom:  8px; }
 .mb-3 { margin-bottom: 16px; }
 .mb-4 { margin-bottom: 24px; }
 .mb-5 { margin-bottom: 32px; }
 
-.p-1 { padding: 4px; }
-.p-2 { padding: 8px; }
+.p-1 { padding:  4px; }
+.p-2 { padding:  8px; }
 .p-3 { padding: 16px; }
 .p-4 { padding: 24px; }
 .p-5 { padding: 32px; }
 
-.d-flex { display: flex; }
-.align-center { align-items: center; }
-.justify-between { justify-content: space-between; }
+.d-flex         { display: flex; }
+.align-center   { align-items: center; }
+.justify-between{ justify-content: space-between; }
 .justify-center { justify-content: center; }
+.full-width     { width: 100%; }
 
-.full-width {
-  width: 100%;
-}
-
-/* Card styles */
+/* ── Card base ──────────────────────────────────────────────────────── */
 .card {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  background: #FFFFFF;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.05);
   padding: 20px;
   margin-bottom: 20px;
 }
 
-/* Form styles */
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-label {
+/* ── Form styles ────────────────────────────────────────────────────── */
+.form-group  { margin-bottom: 20px; }
+.form-label  {
   display: block;
   margin-bottom: 8px;
-  color: #4a5568;
+  color: #4A5568;
   font-weight: 500;
 }
 
-/* Loading spinner overlay */
+/* ── Loading spinner overlay ────────────────────────────────────────── */
 .loading-spinner {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(255, 255, 255, 0.8);
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255, 255, 255, 0.85);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 9999;
 }
 
-/* Responsive breakpoints */
+/* ── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .container {
-    padding: 10px;
-  }
-  
-  .card {
-    padding: 15px;
-  }
+  .container { padding: 10px; }
+  .card      { padding: 15px; }
 }
 
-/* Print styles */
+/* ── Print ──────────────────────────────────────────────────────────── */
 @media print {
-  .no-print {
-    display: none !important;
-  }
+  .no-print { display: none !important; }
 }

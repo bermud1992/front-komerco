@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Product } from '../models/product.model';
 
-// Interfaz CSVProduct actualizada
 export interface CSVProduct {
   upc: string;
   codigoWM2: string;
@@ -23,369 +22,412 @@ export interface HighlightedPrediction {
   recommendation?: string;
 }
 
-@Injectable({
-  providedIn: 'root'
-})
+export type DohLevel = 'red' | 'orange' | 'yellow' | 'green';
+
+export interface DohDistribution {
+  red: number;
+  orange: number;
+  yellow: number;
+  green: number;
+}
+
+@Injectable({ providedIn: 'root' })
 export class DataService {
-  private productsSubject = new BehaviorSubject<Product[]>([]);
+  private productsSubject    = new BehaviorSubject<Product[]>([]);
   private csvProductsSubject = new BehaviorSubject<CSVProduct[]>([]);
-  
-  products$: Observable<Product[]> = this.productsSubject.asObservable();
+
+  products$:    Observable<Product[]>    = this.productsSubject.asObservable();
   csvProducts$: Observable<CSVProduct[]> = this.csvProductsSubject.asObservable();
 
   constructor() {
     this.loadMockData();
   }
 
+  // ── Mock data realista Kommerco × Walmart ────────────────────────────────
   private loadMockData(): void {
     const mockProducts: Product[] = [
+      // ── ROJO (DOH < 50) ──────────────────────────────────────────────────
       {
-        id: 'PROD-001',
-        name: 'Cuaderno Profesional A4',
+        id: '750649501199',
+        name: 'Lápiz Grafito #2 c/12',
         category: 'Escritura',
-        currentStock: 1250,
-        weeklyDemand: 320,
-        price: 15.99,
-        historicalData: this.generateHistoricalData(),
-        prediction: this.generatePredictionData()
-      },
-      {
-        id: 'PROD-002',
-        name: 'Bolígrafo Azul Premium',
-        category: 'Escritura',
-        currentStock: 5200,
-        weeklyDemand: 850,
-        price: 2.49,
-        historicalData: this.generateHistoricalData(),
-        prediction: this.generatePredictionData()
-      },
-      {
-        id: 'PROD-003',
-        name: 'Resma Papel A4 80gr',
-        category: 'Papel',
-        currentStock: 300,
-        weeklyDemand: 45,
-        price: 22.99,
-        historicalData: this.generateHistoricalData(),
-        prediction: this.generatePredictionData()
-      },
-      {
-        id: 'PROD-004',
-        name: 'Lápiz Grafito #2',
-        category: 'Escritura',
-        currentStock: 8500,
+        currentStock: 3200,
         weeklyDemand: 1200,
         price: 0.99,
-        historicalData: this.generateHistoricalData(),
-        prediction: this.generatePredictionData()
+        doh: 26,
+        inStockPct: 82.4,
+        storeCount: 812,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(200, 1200),
+        prediction: this.genPred(220, 1400)
       },
       {
-        id: 'PROD-005',
-        name: 'Folder Manila Tamaño Carta',
+        id: '750649502010',
+        name: 'Bolígrafo Azul 1.0mm',
+        category: 'Escritura',
+        currentStock: 4800,
+        weeklyDemand: 850,
+        price: 2.49,
+        doh: 39,
+        inStockPct: 87.1,
+        storeCount: 756,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(150, 900),
+        prediction: this.genPred(170, 1050)
+      },
+      {
+        id: '750649503301',
+        name: 'Adhesivo Silicón Líquido 120ml',
+        category: 'Adhesivos',
+        currentStock: 1100,
+        weeklyDemand: 320,
+        price: 4.99,
+        doh: 48,
+        inStockPct: 88.9,
+        storeCount: 634,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(80, 350),
+        prediction: this.genPred(90, 400)
+      },
+      // ── NARANJA (DOH 50-59) ──────────────────────────────────────────────
+      {
+        id: '750649504220',
+        name: 'Cuaderno Profesional A4 100h',
+        category: 'Cuadernos',
+        currentStock: 5600,
+        weeklyDemand: 680,
+        price: 15.99,
+        doh: 52,
+        inStockPct: 91.3,
+        storeCount: 798,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(400, 750),
+        prediction: this.genPred(420, 850)
+      },
+      {
+        id: '750649505180',
+        name: 'Plastilina Escolar Rosa 200g',
+        category: 'Manualidades',
+        currentStock: 2900,
+        weeklyDemand: 390,
+        price: 3.49,
+        doh: 56,
+        inStockPct: 90.8,
+        storeCount: 581,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(100, 420),
+        prediction: this.genPred(110, 480)
+      },
+      {
+        id: '750649506044',
+        name: 'Acuarela Escolar 12 Colores',
+        category: 'Manualidades',
+        currentStock: 1750,
+        weeklyDemand: 210,
+        price: 8.99,
+        doh: 58,
+        inStockPct: 92.0,
+        storeCount: 502,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(80, 240),
+        prediction: this.genPred(85, 280)
+      },
+      // ── AMARILLO (DOH 60-70) ─────────────────────────────────────────────
+      {
+        id: '750649507115',
+        name: 'Resma Papel Bond A4 80gr 500h',
+        category: 'Papel',
+        currentStock: 1350,
+        weeklyDemand: 135,
+        price: 22.99,
+        doh: 63,
+        inStockPct: 93.5,
+        storeCount: 445,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(60, 160),
+        prediction: this.genPred(65, 185)
+      },
+      {
+        id: '750649508250',
+        name: 'Folder Manila Tamaño Carta x25',
         category: 'Organización',
-        currentStock: 800,
-        weeklyDemand: 120,
+        currentStock: 3200,
+        weeklyDemand: 340,
         price: 1.99,
-        historicalData: this.generateHistoricalData(),
-        prediction: this.generatePredictionData()
+        doh: 66,
+        inStockPct: 94.1,
+        storeCount: 612,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(100, 380),
+        prediction: this.genPred(110, 420)
+      },
+      {
+        id: '750649509090',
+        name: 'Marcador Fluorescente x4 Colores',
+        category: 'Escritura',
+        currentStock: 2100,
+        weeklyDemand: 220,
+        price: 5.49,
+        doh: 67,
+        inStockPct: 93.8,
+        storeCount: 529,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(70, 250),
+        prediction: this.genPred(75, 290)
+      },
+      {
+        id: '750649510033',
+        name: 'Sacapuntas Metálico Doble Agujero',
+        category: 'Escritura',
+        currentStock: 4500,
+        weeklyDemand: 450,
+        price: 1.29,
+        doh: 70,
+        inStockPct: 95.2,
+        storeCount: 741,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(120, 500),
+        prediction: this.genPred(130, 560)
+      },
+      // ── VERDE (DOH > 70) ─────────────────────────────────────────────────
+      {
+        id: '750649511400',
+        name: 'Crayones Escolares x16 Colores',
+        category: 'Manualidades',
+        currentStock: 6800,
+        weeklyDemand: 580,
+        price: 4.29,
+        doh: 78,
+        inStockPct: 96.4,
+        storeCount: 823,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(200, 640),
+        prediction: this.genPred(210, 720)
+      },
+      {
+        id: '750649512205',
+        name: 'Compás Escolar Metálico',
+        category: 'Geometría',
+        currentStock: 1200,
+        weeklyDemand: 95,
+        price: 9.99,
+        doh: 84,
+        inStockPct: 96.9,
+        storeCount: 389,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(30, 110),
+        prediction: this.genPred(35, 130)
+      },
+      {
+        id: '750649513070',
+        name: 'Regla 30cm Transparente',
+        category: 'Geometría',
+        currentStock: 5500,
+        weeklyDemand: 380,
+        price: 0.79,
+        doh: 96,
+        inStockPct: 97.5,
+        storeCount: 755,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(100, 420),
+        prediction: this.genPred(110, 480)
+      },
+      {
+        id: '750649514088',
+        name: 'Engrapadora Escritorio 24/6',
+        category: 'Organización',
+        currentStock: 980,
+        weeklyDemand: 62,
+        price: 12.99,
+        doh: 105,
+        inStockPct: 97.8,
+        storeCount: 312,
+        isSeasonalOnly: false,
+        historicalData: this.genHist(20, 75),
+        prediction: this.genPred(22, 90)
+      },
+      {
+        id: '750649515099',
+        name: 'Calculadora Científica 240 Funciones',
+        category: 'Matemáticas',
+        currentStock: 2400,
+        weeklyDemand: 130,
+        price: 18.99,
+        doh: 129,
+        inStockPct: 98.1,
+        storeCount: 298,
+        isSeasonalOnly: true,  // BTS estacional
+        historicalData: this.genHist(30, 160),
+        prediction: this.genPred(35, 190)
       }
     ];
+
     this.productsSubject.next(mockProducts);
   }
 
-  private generateHistoricalData(): number[] {
-    return Array.from({ length: 12 }, (_, i) => 
-      Math.floor(Math.random() * 400) + 200 + i * 20
-    );
+  // ── Métodos de semáforo ──────────────────────────────────────────────────
+
+  /** Semáforo DOH según reglas Javier Pérez */
+  getDohSemaphore(doh: number): DohLevel {
+    if (doh < 50)  return 'red';
+    if (doh < 60)  return 'orange';
+    if (doh <= 70) return 'yellow';
+    return 'green';
   }
 
-  private generatePredictionData(): number[] {
-    return Array.from({ length: 16 }, (_, i) => 
-      Math.floor(Math.random() * 500) + 300 + i * 25
-    );
+  /** Semáforo InStock % según umbrales Javier */
+  getInStockSemaphore(pct: number): DohLevel {
+    if (pct < 90)  return 'red';
+    if (pct < 92)  return 'orange';
+    if (pct < 95)  return 'yellow';
+    return 'green';
   }
 
-  // Parsear CSV - Versión CORREGIDA
+  /** Top 10 artículos críticos: menor DOH, excluye estacionales puros */
+  getTop10Critical(): Product[] {
+    return this.productsSubject.value
+      .filter(p => !p.isSeasonalOnly)
+      .sort((a, b) => a.doh - b.doh)
+      .slice(0, 10);
+  }
+
+  /** Promedio ponderado de InStock % (ponderado por número de tiendas) */
+  getGlobalInStock(): number {
+    const products = this.productsSubject.value;
+    if (!products.length) return 0;
+    const totalStores = products.reduce((s, p) => s + (p.storeCount || 0), 0);
+    if (!totalStores) return 0;
+    const weighted = products.reduce((s, p) => s + p.inStockPct * (p.storeCount || 0), 0);
+    return parseFloat((weighted / totalStores).toFixed(1));
+  }
+
+  /** Distribución de artículos por zona de semáforo DOH */
+  getDohDistribution(): DohDistribution {
+    const dist: DohDistribution = { red: 0, orange: 0, yellow: 0, green: 0 };
+    this.productsSubject.value.forEach(p => {
+      dist[this.getDohSemaphore(p.doh)]++;
+    });
+    return dist;
+  }
+
+  /** DOH promedio de todos los artículos */
+  getAvgDoh(): number {
+    const products = this.productsSubject.value;
+    if (!products.length) return 0;
+    return Math.round(products.reduce((s, p) => s + p.doh, 0) / products.length);
+  }
+
+  // ── Métodos existentes (sin cambios) ─────────────────────────────────────
+
   parseCSV(csvContent: string): CSVProduct[] {
     const lines = csvContent.split('\n');
     const products: CSVProduct[] = [];
-    
-    // Saltar la primera línea (encabezados)
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
-      
-      // Separar por punto y coma
       const parts = line.split(';');
-      
       if (parts.length >= 4) {
-        // Limpiar el BOM (Byte Order Mark) del primer campo si existe
-        let upc = parts[0].trim();
-        upc = upc.replace(/^\uFEFF/, ''); // Remover BOM
-        upc = upc.replace(/^ï»¿/, ''); // Remover caracteres especiales
-        upc = upc.replace(/"/g, ''); // Remover comillas
-        
+        let upc = parts[0].trim()
+          .replace(/^\uFEFF/, '')
+          .replace(/^ï»¿/, '')
+          .replace(/"/g, '');
         const descripcion = parts[3]?.trim() || '';
-        
-        // Crear el objeto base sin las propiedades opcionales
         const product: CSVProduct = {
-          upc: upc,
+          upc,
           codigoWM2: parts[1]?.trim() || '',
-          itemFlags: parts[2]?.trim() || '',
-          descripcion: descripcion
+          itemFlags:  parts[2]?.trim() || '',
+          descripcion
         };
-        
-        // Solo agregar si tiene UPC
         if (product.upc && product.upc !== 'UPC') {
-          // Ahora asignar las propiedades opcionales por separado
-          const category = this.detectCategory(descripcion);
-          const cleanName = this.cleanProductName(descripcion);
-          
-          // Usar Type Assertion o crear un nuevo objeto con spread
-          const enhancedProduct: CSVProduct = {
+          products.push({
             ...product,
-            category: category,
-            cleanName: cleanName
-          };
-          
-          products.push(enhancedProduct);
+            category:  this.detectCategory(descripcion),
+            cleanName: this.cleanProductName(descripcion)
+          });
         }
       }
     }
-    
     return products;
   }
 
   loadCSVData(products: CSVProduct[]): void {
     this.csvProductsSubject.next(products);
-    
-    // Convertir productos CSV a productos del sistema para análisis
-    const systemProducts = products.slice(0, 50).map((csvProduct, index) => {
-      // Usar category del CSV o detectarla
-      const category = csvProduct.category || this.detectCategory(csvProduct.descripcion);
-      
-      return {
-        id: `CSV-${String(index + 1).padStart(3, '0')}`,
-        name: csvProduct.cleanName || this.cleanProductName(csvProduct.descripcion),
-        category: category,
-        currentStock: Math.floor(Math.random() * 10000) + 100,
-        weeklyDemand: Math.floor(Math.random() * 500) + 50,
-        price: parseFloat((Math.random() * 50 + 1).toFixed(2)),
-        historicalData: this.generateHistoricalData(),
-        prediction: this.generatePredictionData(),
-        originalData: csvProduct
-      } as Product & { originalData?: CSVProduct };
-    });
-    
-    // Combinar productos mock con CSV
-    const allProducts = [...this.productsSubject.value, ...systemProducts];
-    this.productsSubject.next(allProducts);
+    const systemProducts = products.slice(0, 50).map((csv, i) => ({
+      id:            `CSV-${String(i + 1).padStart(3, '0')}`,
+      name:          csv.cleanName || this.cleanProductName(csv.descripcion),
+      category:      csv.category  || this.detectCategory(csv.descripcion),
+      currentStock:  Math.floor(Math.random() * 10000) + 100,
+      weeklyDemand:  Math.floor(Math.random() * 500) + 50,
+      price:         parseFloat((Math.random() * 50 + 1).toFixed(2)),
+      doh:           Math.floor(Math.random() * 120) + 20,
+      inStockPct:    parseFloat((80 + Math.random() * 18).toFixed(1)),
+      storeCount:    Math.floor(Math.random() * 600) + 100,
+      historicalData: this.genHist(50, 300),
+      prediction:     this.genPred(55, 350)
+    } as Product));
+    this.productsSubject.next([...this.productsSubject.value, ...systemProducts]);
   }
 
   detectCategory(descripcion: string): string {
-    const desc = descripcion.toLowerCase();
-    
-    if (desc.includes('plastilina') || desc.includes('crayon') || desc.includes('acuarela') || desc.includes('pint')) {
-      return 'Arte';
-    } else if (desc.includes('bol') || desc.includes('lapiz') || desc.includes('marcador') || desc.includes('plum')) {
-      return 'Escritura';
-    } else if (desc.includes('papel') || desc.includes('cartul') || desc.includes('foamy') || desc.includes('block')) {
-      return 'Papel y Cartón';
-    } else if (desc.includes('goma') || desc.includes('peg') || desc.includes('adhesivo') || desc.includes('silicon')) {
-      return 'Adhesivos';
-    } else if (desc.includes('regla') || desc.includes('compas') || desc.includes('geometria') || desc.includes('transportador')) {
-      return 'Geometría';
-    } else if (desc.includes('folder') || desc.includes('carpeta') || desc.includes('sobre') || desc.includes('archiv')) {
-      return 'Organización';
-    } else if (desc.includes('pizarron') || desc.includes('borrador') || desc.includes('gis')) {
-      return 'Pizarra';
-    } else if (desc.includes('calculadora') || desc.includes('abaco') || desc.includes('escalimetro')) {
-      return 'Matemáticas';
-    } else if (desc.includes('pincel') || desc.includes('godete') || desc.includes('acuarel')) {
-      return 'Pintura';
-    } else if (desc.includes('cutter') || desc.includes('tijera') || desc.includes('engrapadora')) {
-      return 'Herramientas';
-    } else if (desc.includes('cuaderno') || desc.includes('libreta')) {
-      return 'Cuadernos';
-    } else {
-      return 'Otros';
-    }
+    const d = descripcion.toLowerCase();
+    if (d.includes('plastilina') || d.includes('crayon') || d.includes('acuarela') || d.includes('pint')) return 'Manualidades';
+    if (d.includes('bol') || d.includes('lapiz') || d.includes('marcador') || d.includes('plum')) return 'Escritura';
+    if (d.includes('papel') || d.includes('cartul') || d.includes('foamy') || d.includes('block')) return 'Papel';
+    if (d.includes('goma') || d.includes('peg') || d.includes('adhesivo') || d.includes('silicon')) return 'Adhesivos';
+    if (d.includes('regla') || d.includes('compas') || d.includes('geometria')) return 'Geometría';
+    if (d.includes('folder') || d.includes('carpeta') || d.includes('sobre') || d.includes('archiv')) return 'Organización';
+    if (d.includes('calculadora') || d.includes('abaco')) return 'Matemáticas';
+    if (d.includes('cuaderno') || d.includes('libreta')) return 'Cuadernos';
+    return 'Oficina';
   }
 
   cleanProductName(descripcion: string): string {
-    // Remover prefijos comunes
-    let name = descripcion
-      .replace(/^PG\s*/i, '')
-      .replace(/^P\+G\s*/i, '')
-      .replace(/^P&G\s*/i, '')
-      .replace(/^P\+G\s*/i, '')
-      .trim();
-    
-    // Capitalizar primera letra de cada palabra
-    name = name.toLowerCase()
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-    
-    // Limpiar caracteres especiales
-    name = name.replace(/Ã¡/g, 'á')
-               .replace(/Ã©/g, 'é')
-               .replace(/Ã­/g, 'í')
-               .replace(/Ã³/g, 'ó')
-               .replace(/Ãº/g, 'ú')
-               .replace(/Ã±/g, 'ñ')
-               .replace(/Ã/g, 'Á')
-               .replace(/Ã/g, 'É')
-               .replace(/Ã/g, 'Í')
-               .replace(/Ã/g, 'Ó')
-               .replace(/Ã/g, 'Ú')
-               .replace(/Ã/g, 'Ñ');
-    
+    let name = descripcion.replace(/^P[+&]?G\s*/i, '').trim();
+    name = name.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     return name;
   }
 
-  getCSVProducts(): CSVProduct[] {
-    return this.csvProductsSubject.value;
-  }
-
-  getAllProducts(): Product[] {
-    return this.productsSubject.value;
-  }
+  getCSVProducts():        CSVProduct[] { return this.csvProductsSubject.value; }
+  getAllProducts():        Product[]    { return this.productsSubject.value; }
+  getProductByUPC(u: string) { return this.csvProductsSubject.value.find(p => p.upc === u); }
+  getProductsByCategory(c: string) { return this.productsSubject.value.filter(p => p.category === c); }
 
   searchProduct(query: string): Product | null {
-    const products = this.productsSubject.value;
-    return products.find(p => 
-      p.id.toLowerCase().includes(query.toLowerCase()) || 
+    return this.productsSubject.value.find(p =>
+      p.id.toLowerCase().includes(query.toLowerCase()) ||
       p.name.toLowerCase().includes(query.toLowerCase())
     ) || null;
   }
 
-  getProductByUPC(upc: string): CSVProduct | undefined {
-    return this.csvProductsSubject.value.find(p => p.upc === upc);
-  }
-
-  getProductsByCategory(category: string): Product[] {
-    return this.productsSubject.value.filter(p => p.category === category);
-  }
-
-  getProductStats(): { total: number, categories: Map<string, number> } {
-    const products = this.productsSubject.value;
-    const categories = new Map<string, number>();
-    
-    products.forEach(product => {
-      const count = categories.get(product.category) || 0;
-      categories.set(product.category, count + 1);
-    });
-    
-    return {
-      total: products.length,
-      categories: categories
-    };
-  }
-
-  // Nuevo método para obtener estadísticas de CSV
-  getCSVStats(): { total: number, categoryCounts: Map<string, number> } {
-    const csvProducts = this.csvProductsSubject.value;
-    const categoryCounts = new Map<string, number>();
-    
-    csvProducts.forEach(product => {
-      const category = product.category || 'Sin categoría';
-      const count = categoryCounts.get(category) || 0;
-      categoryCounts.set(category, count + 1);
-    });
-    
-    return {
-      total: csvProducts.length,
-      categoryCounts: categoryCounts
-    };
-  }
-
-  // Método para generar datos de predicción para CSV
   generateCSVPredictions(): HighlightedPrediction[] {
-    const csvProducts = this.csvProductsSubject.value;
-    const predictions: HighlightedPrediction[] = [];
-    
-    csvProducts.slice(0, 10).forEach((product, index) => {
-      const changePercent = Math.floor(Math.random() * 60) + 5;
+    return this.csvProductsSubject.value.slice(0, 10).map((csv, i) => {
+      const change     = Math.floor(Math.random() * 60) + 5;
       const confidence = 70 + Math.random() * 25;
-      
-      predictions.push({
-        productId: `CSV-${String(index + 1).padStart(3, '0')}`,
-        productName: product.cleanName || product.descripcion.substring(0, 40),
-        currentDemand: Math.floor(Math.random() * 300) + 50,
+      return {
+        productId:       `CSV-${String(i + 1).padStart(3, '0')}`,
+        productName:     csv.cleanName || csv.descripcion.substring(0, 40),
+        currentDemand:   Math.floor(Math.random() * 300) + 50,
         predictedDemand: Math.floor(Math.random() * 450) + 100,
-        changePercent: parseFloat(changePercent.toFixed(1)),
-        confidence: parseFloat(confidence.toFixed(1)),
-        riskLevel: confidence > 85 ? 'low' : confidence > 75 ? 'medium' : 'high',
-        recommendation: this.generateRecommendation(changePercent, confidence)
-      });
+        changePercent:   parseFloat(change.toFixed(1)),
+        confidence:      parseFloat(confidence.toFixed(1)),
+        riskLevel:       confidence > 85 ? 'low' : confidence > 75 ? 'medium' : 'high',
+        recommendation:  this.generateRecommendation(change, confidence)
+      };
     });
-    
-    return predictions;
   }
 
   private generateRecommendation(change: number, confidence: number): string {
-    if (change > 40 && confidence > 80) {
-      return 'Aumentar stock significativamente';
-    } else if (change > 25 && confidence > 70) {
-      return 'Incrementar pedidos regulares';
-    } else if (change < 10 && confidence > 85) {
-      return 'Reducir inventario gradualmente';
-    } else {
-      return 'Mantener niveles actuales';
-    }
+    if (change > 40 && confidence > 80) return 'Aumentar stock significativamente';
+    if (change > 25 && confidence > 70) return 'Incrementar pedidos regulares';
+    if (change < 10 && confidence > 85) return 'Reducir inventario gradualmente';
+    return 'Mantener niveles actuales';
   }
 
-  // Método para simular análisis de tendencias
-  analyzeTrends(): any {
-    const csvProducts = this.csvProductsSubject.value;
-    const categoryAnalysis = new Map<string, { count: number, avgLength: number }>();
-    
-    csvProducts.forEach(product => {
-      const category = product.category || 'Sin categoría';
-      const current = categoryAnalysis.get(category) || { count: 0, avgLength: 0 };
-      
-      categoryAnalysis.set(category, {
-        count: current.count + 1,
-        avgLength: current.avgLength + product.descripcion.length
-      });
-    });
-    
-    // Convertir a array para el análisis
-    const analysis = Array.from(categoryAnalysis.entries()).map(([category, data]) => ({
-      category,
-      count: data.count,
-      percentage: (data.count / csvProducts.length * 100).toFixed(1),
-      avgNameLength: Math.round(data.avgLength / data.count)
-    })).sort((a, b) => b.count - a.count);
-    
-    return {
-      totalProducts: csvProducts.length,
-      categoryAnalysis: analysis,
-      topCategories: analysis.slice(0, 5),
-      recommendations: this.generateTrendRecommendations(analysis)
-    };
+  private genHist(min: number, max: number): number[] {
+    return Array.from({ length: 12 }, () => Math.floor(Math.random() * (max - min)) + min);
   }
 
-  private generateTrendRecommendations(analysis: any[]): string[] {
-    const recommendations: string[] = [];
-    
-    if (analysis.length > 0) {
-      const topCategory = analysis[0];
-      recommendations.push(
-        `Enfocar análisis en productos de "${topCategory.category}" (${topCategory.percentage}% del total)`
-      );
-      
-      if (topCategory.percentage > 30) {
-        recommendations.push('Considerar diversificar el inventario para reducir dependencia de una sola categoría');
-      }
-      
-      const lowCategories = analysis.filter(cat => parseFloat(cat.percentage) < 5);
-      if (lowCategories.length > 0) {
-        recommendations.push(`Evaluar rentabilidad de categorías con baja representación: ${lowCategories.map(c => c.category).join(', ')}`);
-      }
-    }
-    
-    return recommendations;
+  private genPred(min: number, max: number): number[] {
+    return Array.from({ length: 16 }, () => Math.floor(Math.random() * (max - min)) + min);
   }
 }

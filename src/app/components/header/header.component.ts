@@ -1,24 +1,42 @@
-import { Component, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit, OnDestroy, Output, EventEmitter } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
+import { NavigationService, AppView } from '../../services/navigation.service';
 
 @Component({
   selector: 'app-header',
   templateUrl: './header.component.html',
   styleUrls: ['./header.component.scss']
 })
-export class HeaderComponent {
+export class HeaderComponent implements OnInit, OnDestroy {
   @Output() toggleSidebar = new EventEmitter<void>();
-  
+
   navTabs = [
-    { label: 'Predicciones', icon: 'trending_up' },
-    { label: 'Inventario', icon: 'inventory_2' },
-    { label: 'Reportes', icon: 'assessment' },
-    { label: 'Configuración', icon: 'settings' }
+    { label: 'Operativo',           icon: 'dashboard',         key: 'operativo'  as AppView },
+    { label: 'Inventario',          icon: 'inventory_2',       key: 'table'      as AppView },
+    { label: 'Catálogo CSV',        icon: 'insert_drive_file', key: 'csv'        as AppView },
+    { label: 'Análisis Predictivo', icon: 'analytics',         key: 'prediction' as AppView },
   ];
-  
+
   activeTab = this.navTabs[0];
 
-  constructor(private authService: AuthService) {}
+  private navSub!: Subscription;
+
+  constructor(
+    private authService: AuthService,
+    private navService: NavigationService
+  ) {}
+
+  ngOnInit(): void {
+    this.navSub = this.navService.view$.subscribe(view => {
+      const found = this.navTabs.find(t => t.key === view);
+      if (found) this.activeTab = found;
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.navSub?.unsubscribe();
+  }
 
   onToggleSidebar(): void {
     this.toggleSidebar.emit();
@@ -32,9 +50,7 @@ export class HeaderComponent {
     return this.authService.getUsername();
   }
 
-  selectTab(tab: any): void {
-    this.activeTab = tab;
-    // In a real app, you would navigate or load different content
-    console.log('Tab selected:', tab.label);
+  selectTab(tab: { label: string; icon: string; key: AppView }): void {
+    this.navService.navigateTo(tab.key);
   }
 }

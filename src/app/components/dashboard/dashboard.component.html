@@ -1,485 +1,401 @@
 <div class="dashboard-container">
   <!-- Sidebar -->
-  <app-sidebar 
-    (predict)="onPredict()" 
+  <app-sidebar
+    (predict)="onPredict()"
     (fileUploaded)="onFileUploaded()">
   </app-sidebar>
 
   <!-- Main Content -->
-  <div class="main-content" [class.right-panel-collapsed]="isRightPanelCollapsed">
+  <div class="main-content">
+
     <!-- Loading Overlay -->
     <div *ngIf="isLoading" class="loading-overlay">
       <mat-spinner diameter="50"></mat-spinner>
-      <p>Procesando predicción...</p>
+      <p>Procesando...</p>
     </div>
 
-    <!-- Barra de navegación de vistas -->
-    <div class="view-switcher" *ngIf="viewMode !== 'prediction'">
-      <div class="view-tabs">
-        <button mat-button 
-                [class.active]="viewMode === 'table'"
-                (click)="switchToTableView()">
-          <mat-icon>table_chart</mat-icon>
-          Inventario General
-        </button>
-        
-        <button mat-button 
-                [class.active]="viewMode === 'csv'"
-                (click)="switchToCSVView()"
-                [disabled]="csvProducts.length === 0">
-          <mat-icon>insert_drive_file</mat-icon>
-          Productos CSV
-          <span class="badge" *ngIf="csvProducts.length > 0">
-            {{ csvProducts.length }}
-          </span>
-        </button>
-      </div>
-      
-      <div class="view-info" *ngIf="viewMode === 'csv'">
-        <mat-icon>info</mat-icon>
-        <span>Mostrando productos cargados desde archivo CSV</span>
-      </div>
-    </div>
+    <!-- ═══════════════════════════════════════════════════════════════════
+         VISTA OPERATIVO — E01 Semáforo DOH + E02 InStock % + E03 Top 10
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div *ngIf="viewMode === 'operativo'" class="operativo-view">
 
-    <!-- Vista de Bienvenida -->
-    <div class="welcome-banner" *ngIf="viewMode === 'welcome'">
-      <div class="banner-content">
-        <h1>Bienvenido a Kommerco Analytics</h1>
-        <p>Sistema predictivo para productos de papelería</p>
-        <p class="banner-subtitle">Seleccione un producto de la tabla o cargue un archivo CSV para comenzar</p>
-      </div>
-    </div>
+      <!-- KPI Cards (E02) -->
+      <div class="kpi-row">
 
-    <!-- Vista de Tabla de Productos -->
+        <div class="kpi-card" [ngClass]="inStockSemaphoreClass">
+          <div class="kpi-icon"><mat-icon>store</mat-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value">{{ globalInStock }}%</div>
+            <div class="kpi-label">InStock Global</div>
+            <div class="kpi-sub">Objetivo contractual: 97%</div>
+          </div>
+        </div>
+
+        <div class="kpi-card chip-red">
+          <div class="kpi-icon"><mat-icon>warning</mat-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value">{{ dohDistribution.red }}</div>
+            <div class="kpi-label">Artículos ROJO</div>
+            <div class="kpi-sub">DOH &lt; 50 días — Desabasto inminente</div>
+          </div>
+        </div>
+
+        <div class="kpi-card chip-yellow">
+          <div class="kpi-icon"><mat-icon>schedule</mat-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value">{{ avgDoh }} días</div>
+            <div class="kpi-label">DOH Promedio</div>
+            <div class="kpi-sub">Objetivo WM: 70 días</div>
+          </div>
+        </div>
+
+        <div class="kpi-card chip-green">
+          <div class="kpi-icon"><mat-icon>check_circle</mat-icon></div>
+          <div class="kpi-body">
+            <div class="kpi-value">{{ dohDistribution.green }}</div>
+            <div class="kpi-label">Artículos VERDE</div>
+            <div class="kpi-sub">DOH &gt; 70 días — Cobertura OK</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Leyenda semáforo (Javier) -->
+      <div class="semaphore-legend">
+        <span class="legend-chip chip-red">ROJO &lt;50d</span>
+        <span class="legend-chip chip-orange">NARANJA 50–59d</span>
+        <span class="legend-chip chip-yellow">AMARILLO 60–70d</span>
+        <span class="legend-chip chip-green">VERDE &gt;70d</span>
+        <!-- <span class="legend-ref">Regla Javier Pérez — Objetivo WM: 70 días</span> -->
+      </div>
+
+      <!-- Grid: Tabla DOH + Top 10 -->
+      <div class="operativo-grid">
+
+        <!-- E01 — Semáforo DOH -->
+        <div class="panel-card doh-table-panel">
+          <div class="panel-card-header">
+            <div>
+              <h3><mat-icon>traffic</mat-icon> Semáforo DOH</h3>
+              <p>Días de cobertura por artículo</p>
+            </div>
+            <mat-form-field appearance="outline" class="category-filter">
+              <mat-label>Categoría</mat-label>
+              <mat-select [(value)]="categoryFilter">
+                <mat-option value="all">Todas</mat-option>
+                <mat-option *ngFor="let cat of dohCategories" [value]="cat">{{ cat }}</mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+
+          <div class="doh-table-wrapper">
+            <table class="doh-table">
+              <thead>
+                <tr>
+                  <th>Artículo</th>
+                  <th>Categoría</th>
+                  <th class="center">DOH (días)</th>
+                  <th class="center">Estado</th>
+                  <th class="center">InStock %</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let p of filteredDohProducts"
+                    [ngClass]="getDohRowClass(p.doh)"
+                    (click)="selectProduct(p)"
+                    class="doh-row">
+                  <td>
+                    <div class="product-name-cell">
+                      <strong>{{ p.name }}</strong>
+                      <span class="product-id-label">{{ p.id }}</span>
+                    </div>
+                  </td>
+                  <td><span class="category-tag">{{ p.category }}</span></td>
+                  <td class="center doh-value">{{ p.doh }}</td>
+                  <td class="center">
+                    <span class="semaphore-chip" [ngClass]="getDohChipClass(p.doh)">
+                      {{ getDohLabel(p.doh) }}
+                    </span>
+                  </td>
+                  <td class="center">
+                    <span class="instock-badge" [ngClass]="getInStockChipClass(p.inStockPct)">
+                      {{ p.inStockPct }}%
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- E03 — Top 10 Críticos -->
+        <div class="panel-card top10-panel">
+          <div class="panel-card-header">
+            <div>
+              <h3><mat-icon>bar_chart</mat-icon> Top 10 Críticos</h3>
+              <p>Artículos con menor cobertura (excluye estacionales)</p>
+            </div>
+          </div>
+          <div *ngIf="top10ChartOptions">
+            <apx-chart
+              [series]="top10ChartOptions.series"
+              [chart]="top10ChartOptions.chart"
+              [plotOptions]="top10ChartOptions.plotOptions"
+              [colors]="top10ChartOptions.colors"
+              [dataLabels]="top10ChartOptions.dataLabels"
+              [xaxis]="top10ChartOptions.xaxis"
+              [yaxis]="top10ChartOptions.yaxis"
+              [legend]="top10ChartOptions.legend"
+              [tooltip]="top10ChartOptions.tooltip"
+              [annotations]="top10ChartOptions.annotations"
+              [grid]="top10ChartOptions.grid">
+            </apx-chart>
+          </div>
+
+          <!-- Distribución DOH -->
+          <div class="doh-distribution">
+            <h4>Distribución por Zona</h4>
+            <div class="dist-bars">
+              <div class="dist-item">
+                <span class="dist-label chip-red">ROJO</span>
+                <div class="dist-bar-bg">
+                  <div class="dist-bar red" [style.width.%]="(dohDistribution.red / allProducts.length) * 100"></div>
+                </div>
+                <span class="dist-count">{{ dohDistribution.red }}</span>
+              </div>
+              <div class="dist-item">
+                <span class="dist-label chip-orange">NARANJA</span>
+                <div class="dist-bar-bg">
+                  <div class="dist-bar orange" [style.width.%]="(dohDistribution.orange / allProducts.length) * 100"></div>
+                </div>
+                <span class="dist-count">{{ dohDistribution.orange }}</span>
+              </div>
+              <div class="dist-item">
+                <span class="dist-label chip-yellow">AMARILLO</span>
+                <div class="dist-bar-bg">
+                  <div class="dist-bar yellow" [style.width.%]="(dohDistribution.yellow / allProducts.length) * 100"></div>
+                </div>
+                <span class="dist-count">{{ dohDistribution.yellow }}</span>
+              </div>
+              <div class="dist-item">
+                <span class="dist-label chip-green">VERDE</span>
+                <div class="dist-bar-bg">
+                  <div class="dist-bar green" [style.width.%]="(dohDistribution.green / allProducts.length) * 100"></div>
+                </div>
+                <span class="dist-count">{{ dohDistribution.green }}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /operativo-grid -->
+    </div><!-- /operativo-view -->
+
+    <!-- ═══════════════════════════════════════════════════════
+         VISTA INVENTARIO GENERAL
+         ═══════════════════════════════════════════════════════ -->
     <div class="products-table-container" *ngIf="viewMode === 'table'">
       <div class="section-header">
         <h2>Inventario de Productos</h2>
-        <p>Catálogo completo de productos de papelería</p>
+        <p>Catálogo completo — Kommerco × Walmart</p>
       </div>
 
       <div class="table-controls">
         <mat-form-field appearance="outline" class="search-field">
-          <mat-label>Buscar producto...</mat-label>
-          <input matInput [(ngModel)]="searchTerm" 
-                 (ngModelChange)="applyTableFilters()" 
-                 placeholder="Ej: Cuaderno, Bolígrafo, Papel">
+          <mat-label>Buscar artículo...</mat-label>
+          <input matInput [(ngModel)]="searchTerm"
+                 (ngModelChange)="applyTableFilters()"
+                 placeholder="Ej: Lápiz, Cuaderno, Carpeta">
           <mat-icon matSuffix>search</mat-icon>
         </mat-form-field>
-
-        <button mat-raised-button color="primary" (click)="viewMode = 'prediction'" *ngIf="selectedProduct">
+        <button mat-raised-button color="primary" (click)="onPredict()" *ngIf="selectedProduct">
           <mat-icon>analytics</mat-icon>
-          Ver Predicción Seleccionada
+          Ver Predicción
         </button>
       </div>
 
       <div class="table-wrapper">
         <table mat-table [dataSource]="dataSource" matSort class="products-table">
-          
-          <!-- ID Column -->
+
           <ng-container matColumnDef="id">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header> ID </th>
-            <td mat-cell *matCellDef="let product"> 
-              <span class="product-id">{{product.id}}</span>
-            </td>
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>UPC / ID</th>
+            <td mat-cell *matCellDef="let p"><span class="product-id">{{p.id}}</span></td>
           </ng-container>
 
-          <!-- Nombre Column -->
           <ng-container matColumnDef="name">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header> Producto </th>
-            <td mat-cell *matCellDef="let product"> 
-              <div class="product-info">
-                <strong>{{product.name}}</strong>
-                <span class="category">{{product.category}}</span>
-              </div>
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Artículo</th>
+            <td mat-cell *matCellDef="let p">
+              <div class="product-info"><strong>{{p.name}}</strong><span class="category">{{p.category}}</span></div>
             </td>
           </ng-container>
 
-          <!-- Categoría Column -->
           <ng-container matColumnDef="category">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header> Categoría </th>
-            <td mat-cell *matCellDef="let product"> {{product.category}} </td>
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Categoría</th>
+            <td mat-cell *matCellDef="let p">{{p.category}}</td>
           </ng-container>
 
-          <!-- Stock Column -->
           <ng-container matColumnDef="currentStock">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header> Stock </th>
-            <td mat-cell *matCellDef="let product"> 
-              <span class="stock-value">{{product.currentStock | number}}</span>
-            </td>
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Stock</th>
+            <td mat-cell *matCellDef="let p"><span class="stock-value">{{p.currentStock | number}}</span></td>
           </ng-container>
 
-          <!-- Demanda Column -->
           <ng-container matColumnDef="weeklyDemand">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header> Demanda Sem. </th>
-            <td mat-cell *matCellDef="let product"> 
-              {{product.weeklyDemand | number}}
-            </td>
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Demanda Sem.</th>
+            <td mat-cell *matCellDef="let p">{{p.weeklyDemand | number}}</td>
           </ng-container>
 
-          <!-- Precio Column -->
           <ng-container matColumnDef="price">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header> Precio </th>
-            <td mat-cell *matCellDef="let product"> 
-              {{product.price | currency:'USD':'symbol':'1.2-2'}}
-            </td>
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Precio</th>
+            <td mat-cell *matCellDef="let p">{{p.price | currency:'USD':'symbol':'1.2-2'}}</td>
           </ng-container>
 
-          <!-- Tendencia Column -->
           <ng-container matColumnDef="trend">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header> Tendencia </th>
-            <td mat-cell *matCellDef="let product"> 
-              <div class="trend-indicator" [style.color]="getTrendColor(15)">
-                <mat-icon>{{getTrendIcon(15)}}</mat-icon>
-                <span>+15%</span>
-              </div>
+            <th mat-header-cell *matHeaderCellDef>DOH</th>
+            <td mat-cell *matCellDef="let p">
+              <span class="semaphore-chip" [ngClass]="getDohChipClass(p.doh)">{{ p.doh }}d</span>
             </td>
           </ng-container>
 
-          <!-- Acciones Column -->
           <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef> Acciones </th>
-            <td mat-cell *matCellDef="let product"> 
-              <button mat-icon-button color="primary" (click)="selectProduct(product)" 
-                      matTooltip="Ver predicción" matTooltipPosition="above">
+            <th mat-header-cell *matHeaderCellDef>Acciones</th>
+            <td mat-cell *matCellDef="let p">
+              <button mat-icon-button color="primary" (click)="selectProduct(p)" matTooltip="Ver predicción">
                 <mat-icon>trending_up</mat-icon>
               </button>
-              <button mat-icon-button color="accent" (click)="selectProduct(product)" 
-                      matTooltip="Analizar" matTooltipPosition="above">
+              <button mat-icon-button color="accent" (click)="selectProduct(p)" matTooltip="Analizar">
                 <mat-icon>analytics</mat-icon>
               </button>
             </td>
           </ng-container>
 
           <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns;" 
+          <tr mat-row *matRowDef="let row; columns: displayedColumns;"
               [class.selected]="selectedProduct?.id === row.id"
               (click)="selectedProduct = row"></tr>
         </table>
-
         <mat-paginator [pageSizeOptions]="[5, 10, 20]" showFirstLastButtons></mat-paginator>
       </div>
     </div>
 
-    <!-- Vista de CSV -->
+    <!-- ═══════════════════════════════════════════════════════
+         VISTA CSV
+         ═══════════════════════════════════════════════════════ -->
     <div class="csv-view-container" *ngIf="viewMode === 'csv'">
       <app-csv-viewer [csvProducts]="csvProducts"></app-csv-viewer>
-      
-      <!-- Acciones para CSV -->
       <div class="csv-actions" *ngIf="csvProducts.length > 0">
         <div class="actions-header">
-          <h3>Análisis de Productos CSV</h3>
-          <p>Seleccione una acción para procesar los productos cargados</p>
+          <h3>Análisis de Catálogo CSV</h3>
+          <p>Acciones sobre los productos cargados desde Retail Link</p>
         </div>
-        
         <div class="action-cards">
           <div class="action-card" (click)="generatePredictions()">
-            <div class="action-icon">
-              <mat-icon>auto_awesome</mat-icon>
-            </div>
+            <div class="action-icon"><mat-icon>auto_awesome</mat-icon></div>
             <h4>Generar Predicciones</h4>
-            <p>Ejecutar análisis predictivo para todos los productos cargados</p>
-            <button mat-raised-button color="primary">
-              Ejecutar
-            </button>
+            <p>Análisis predictivo para todos los artículos</p>
+            <button mat-raised-button color="primary">Ejecutar</button>
           </div>
-          
           <div class="action-card" (click)="analyzeTrends()">
-            <div class="action-icon">
-              <mat-icon>trending_up</mat-icon>
-            </div>
+            <div class="action-icon"><mat-icon>trending_up</mat-icon></div>
             <h4>Analizar Tendencias</h4>
-            <p>Identificar patrones y tendencias en los productos</p>
-            <button mat-raised-button color="accent">
-              Analizar
-            </button>
+            <p>Identificar patrones estacionales y por categoría</p>
+            <button mat-raised-button color="accent">Analizar</button>
           </div>
-          
           <div class="action-card" (click)="exportAnalysis()">
-            <div class="action-icon">
-              <mat-icon>download</mat-icon>
-            </div>
+            <div class="action-icon"><mat-icon>download</mat-icon></div>
             <h4>Exportar Resultados</h4>
-            <p>Exportar análisis completo en formato Excel</p>
-            <button mat-raised-button color="warn">
-              Exportar
-            </button>
+            <p>Exportar análisis completo (JSON/Excel)</p>
+            <button mat-raised-button color="warn">Exportar</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Vista de Predicción Detallada -->
+    <!-- ═══════════════════════════════════════════════════════
+         VISTA ANÁLISIS PREDICTIVO (E14)
+         ═══════════════════════════════════════════════════════ -->
     <div *ngIf="viewMode === 'prediction' && selectedProduct" class="prediction-detail">
-      <!-- Volver a tabla -->
+
       <div class="back-to-table">
-        <button mat-stroked-button (click)="switchToTableView()">
+        <button mat-stroked-button (click)="switchToOperativoView()">
           <mat-icon>arrow_back</mat-icon>
-          Volver al Inventario
+          Volver al Operativo
         </button>
         <div class="current-product">
-          <h3>Analizando: {{selectedProduct.name}}</h3>
+          <h3>Análisis: {{selectedProduct.name}}</h3>
           <span class="product-id">{{selectedProduct.id}}</span>
+          <span class="semaphore-chip ml-8" [ngClass]="getDohChipClass(selectedProduct.doh)">
+            DOH: {{ selectedProduct.doh }} días
+          </span>
         </div>
       </div>
 
-      <!-- Product Cards -->
       <div class="product-cards-container">
         <div class="cards-grid">
-          <app-product-card 
-            [product]="selectedProduct"
-            [showAnalysis]="true">
-          </app-product-card>
+          <app-product-card [product]="selectedProduct" [showAnalysis]="true"></app-product-card>
         </div>
       </div>
 
-      <!-- Predictive Analysis Section -->
       <div class="predictive-section">
         <div class="section-header">
-          <h2>Análisis Predictivo de Productos</h2>
-          <p>Proyección de demanda para las próximas 16 semanas</p>
+          <h2>Análisis de Predicciones del Producto</h2>
+          <p>Proyección de demanda (16 semanas) con banda de error ±MAPE</p>
         </div>
 
         <div class="analysis-controls">
           <mat-form-field appearance="outline" class="product-selector">
-            <mat-label>Seleccionar Producto</mat-label>
+            <mat-label>Seleccionar Artículo</mat-label>
             <mat-select [(value)]="selectedProduct">
-              <mat-option *ngFor="let product of allProducts" [value]="product">
-                {{product.name}} ({{product.id}})
-              </mat-option>
+              <mat-option *ngFor="let p of allProducts" [value]="p">{{p.name}} ({{p.id}})</mat-option>
             </mat-select>
             <mat-icon matSuffix>inventory_2</mat-icon>
           </mat-form-field>
-
           <button mat-raised-button color="primary" class="analyze-button" (click)="onAnalyze()">
             <mat-icon>analytics</mat-icon>
             Actualizar Análisis
           </button>
         </div>
 
-        <!-- Detailed Predictive Analysis -->
         <div class="detailed-analysis">
-          <div class="section-header">
-            <h3>Análisis Predictivo Detallado</h3>
-            <p>Comparación histórica vs predicción</p>
-          </div>
-
           <div class="chart-container">
             <app-predictive-chart></app-predictive-chart>
           </div>
 
-          <!-- Additional Metrics -->
           <div class="metrics-grid">
             <div class="metric-card">
-              <div class="metric-header">
-                <mat-icon>trending_up</mat-icon>
-                <h4>Tendencia</h4>
+              <div class="metric-header"><mat-icon>traffic</mat-icon><h4>Semáforo DOH</h4></div>
+              <div class="metric-value">
+                <span class="semaphore-chip" [ngClass]="getDohChipClass(selectedProduct.doh)">
+                  {{ getDohLabel(selectedProduct.doh) }} — {{ selectedProduct.doh }} días
+                </span>
               </div>
-              <div class="metric-value positive">+12.5%</div>
-              <p class="metric-label">Crecimiento semanal</p>
+              <p class="metric-label">Días de inventario en tienda</p>
             </div>
-
             <div class="metric-card">
-              <div class="metric-header">
-                <mat-icon>show_chart</mat-icon>
-                <h4>Demanda Máxima</h4>
+              <div class="metric-header"><mat-icon>store</mat-icon><h4>InStock %</h4></div>
+              <div class="metric-value">
+                <span class="semaphore-chip" [ngClass]="getInStockChipClass(selectedProduct.inStockPct)">
+                  {{ selectedProduct.inStockPct }}%
+                </span>
               </div>
-              <div class="metric-value">1,250 unidades</div>
-              <p class="metric-label">Semana 8 proyectada</p>
+              <p class="metric-label">Objetivo: 97% contractual</p>
             </div>
-
             <div class="metric-card">
-              <div class="metric-header">
-                <mat-icon>compare</mat-icon>
-                <h4>Confianza</h4>
-              </div>
-              <div class="metric-value">94.2%</div>
-              <p class="metric-label">Nivel de precisión</p>
+              <div class="metric-header"><mat-icon>show_chart</mat-icon><h4>Tiendas Activas</h4></div>
+              <div class="metric-value">{{ selectedProduct.storeCount | number }}</div>
+              <p class="metric-label">Combinaciones artículo-tienda</p>
             </div>
-
             <div class="metric-card">
-              <div class="metric-header">
-                <mat-icon>warning</mat-icon>
-                <h4>Recomendación</h4>
-              </div>
-              <div class="metric-value warning">Aumentar stock</div>
-              <p class="metric-label">Inventario insuficiente</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right Panel -->
-  <div class="right-panel" [class.collapsed]="isRightPanelCollapsed">
-    <!-- Panel Header -->
-    <div class="panel-header">
-      <h3>Panel de Control</h3>
-      <button mat-icon-button (click)="toggleRightPanel()" class="collapse-button">
-        <mat-icon>{{ isRightPanelCollapsed ? 'chevron_left' : 'chevron_right' }}</mat-icon>
-      </button>
-    </div>
-
-    <!-- Predicciones Destacadas (Colapsable) -->
-    <div class="panel-section">
-      <div class="section-header collapsable" (click)="togglePredictionsSection()">
-        <div class="header-content">
-          <mat-icon>star</mat-icon>
-          <h4>Predicciones Destacadas</h4>
-        </div>
-        <mat-icon class="collapse-icon">
-          {{ isPredictionsCollapsed ? 'expand_more' : 'expand_less' }}
-        </mat-icon>
-      </div>
-
-      <div class="section-content" [class.collapsed]="isPredictionsCollapsed">
-        <div class="highlighted-predictions">
-          <div *ngFor="let prediction of highlightedPredictions" 
-               class="prediction-card"
-               [class.selected]="selectedProduct?.id === prediction.productId"
-               (click)="selectFromHighlighted(prediction)">
-            
-            <div class="prediction-header">
-              <div class="product-info">
-                <strong>{{prediction.productName}}</strong>
-                <span class="product-id">{{prediction.productId}}</span>
-              </div>
-              <div class="risk-badge" [style.background-color]="getRiskColor(prediction.riskLevel)">
-                {{prediction.riskLevel | uppercase}}
-              </div>
-            </div>
-
-            <div class="prediction-metrics">
-              <div class="metric-row">
-                <span>Demanda Actual:</span>
-                <strong>{{prediction.currentDemand | number}}/sem</strong>
-              </div>
-              <div class="metric-row">
-                <span>Predicción:</span>
-                <strong [style.color]="getChangeColor(prediction.changePercent)">
-                  {{prediction.predictedDemand | number}}/sem
-                </strong>
-              </div>
-              <div class="metric-row">
-                <span>Cambio:</span>
-                <strong [style.color]="getChangeColor(prediction.changePercent)">
-                  {{prediction.changePercent > 0 ? '+' : ''}}{{prediction.changePercent}}%
-                </strong>
-              </div>
-            </div>
-
-            <div class="prediction-footer">
-              <div class="confidence">
-                <mat-icon>verified</mat-icon>
-                <span>{{prediction.confidence}}% confianza</span>
-              </div>
-              <button mat-icon-button color="primary" class="analyze-btn">
-                <mat-icon>trending_up</mat-icon>
-              </button>
+              <div class="metric-header"><mat-icon>warning</mat-icon><h4>Recomendación</h4></div>
+              <div class="metric-value warning" *ngIf="selectedProduct.doh < 50">Despacho urgente</div>
+              <div class="metric-value" *ngIf="selectedProduct.doh >= 50 && selectedProduct.doh < 60">Acelerar resurtido</div>
+              <div class="metric-value" *ngIf="selectedProduct.doh >= 60 && selectedProduct.doh <= 70">Monitorear PO</div>
+              <div class="metric-value positive" *ngIf="selectedProduct.doh > 70">Operación normal</div>
+              <p class="metric-label">Basado en DOH actual</p>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Resumen de Productos (Colapsable) -->
-    <div class="panel-section">
-      <div class="section-header collapsable" (click)="toggleProductsSection()">
-        <div class="header-content">
-          <mat-icon>inventory_2</mat-icon>
-          <h4>Resumen de Productos</h4>
-        </div>
-        <mat-icon class="collapse-icon">
-          {{ isProductsCollapsed ? 'expand_more' : 'expand_less' }}
-        </mat-icon>
-      </div>
-
-      <div class="section-content" [class.collapsed]="isProductsCollapsed">
-        <div class="products-summary">
-          <div class="summary-metrics">
-            <div class="summary-metric">
-              <div class="metric-value">{{allProducts.length}}</div>
-              <div class="metric-label">Total Productos</div>
-            </div>
-            <div class="summary-metric">
-              <div class="metric-value">{{csvStats.total}}</div>
-              <div class="metric-label">Productos CSV</div>
-            </div>
-          </div>
-
-          <div class="category-breakdown">
-            <h5>Distribución por Categoría</h5>
-            <div *ngFor="let category of getCategoryDistribution().slice(0, 4)" class="category-item">
-              <span class="category-name">{{ category.name }}</span>
-              <div class="category-bar">
-                <div class="bar-fill" [style.width.%]="category.percentage"></div>
-              </div>
-              <span class="category-count">{{ category.percentage }}%</span>
-            </div>
-          </div>
-
-          <div class="quick-actions">
-            <button mat-stroked-button class="quick-action-btn" (click)="switchToCSVView()">
-              <mat-icon>insert_drive_file</mat-icon>
-              Ver Productos CSV
-            </button>
-            <button mat-stroked-button class="quick-action-btn" (click)="exportAnalysis()">
-              <mat-icon>file_download</mat-icon>
-              Exportar CSV
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Acciones Rápidas -->
-    <div class="panel-section quick-actions-section">
-      <div class="section-header">
-        <mat-icon>flash_on</mat-icon>
-        <h4>Acciones Rápidas</h4>
-      </div>
-      <div class="section-content">
-        <button mat-raised-button color="primary" class="quick-action-full" (click)="generatePredictions()">
-          <mat-icon>add_chart</mat-icon>
-          Nuevo Análisis
-        </button>
-        <button mat-stroked-button class="quick-action-full" (click)="analyzeTrends()">
-          <mat-icon>notifications</mat-icon>
-          Analizar Tendencias
-        </button>
-        <button mat-stroked-button class="quick-action-full" (click)="exportAnalysis()">
-          <mat-icon>share</mat-icon>
-          Exportar Reporte
-        </button>
-      </div>
-    </div>
-
-    <!-- Estadísticas -->
-    <div class="panel-section">
-      <div class="section-header">
-        <mat-icon>assessment</mat-icon>
-        <h4>Estadísticas Rápidas</h4>
-      </div>
-      <div class="section-content">
-        <div class="stats-grid">
-          <div class="stat-item">
-            <div class="stat-value">${{ getInventoryValue() | number:'1.0-0' }}</div>
-            <div class="stat-label">Valor Inventario</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">{{ getAverageDemand() }}</div>
-            <div class="stat-label">Demanda Promedio</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">{{ getLowStockProducts().length }}</div>
-            <div class="stat-label">Stock Bajo</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">24h</div>
-            <div class="stat-label">Última Actualización</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+  </div><!-- /main-content -->
+</div><!-- /dashboard-container -->
