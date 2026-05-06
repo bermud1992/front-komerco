@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 
-export type AppView = 'operativo' | 'table' | 'csv' | 'prediction';
+export type AppView = 'operativo' | 'table' | 'csv' | 'prediction' | 'bts';
 
 @Injectable({ providedIn: 'root' })
 export class NavigationService {

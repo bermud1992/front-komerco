@@ -21,6 +21,7 @@ import { MatTableModule } from '@angular/material/table';
 import { MatSortModule } from '@angular/material/sort';
 import { MatPaginatorModule } from '@angular/material/paginator';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 // ApexCharts
 import { NgApexchartsModule } from 'ng-apexcharts';
@@ -81,7 +82,9 @@ import { PredictionDialogComponent } from './components/dialogs/prediction-dialo
     MatSortModule,
     MatPaginatorModule,
     MatTooltipModule,
-    
+    MatSlideToggleModule,
+    MatDialogModule,
+
     // ApexCharts
     NgApexchartsModule
   ],

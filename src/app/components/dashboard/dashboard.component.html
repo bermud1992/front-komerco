@@ -397,5 +397,533 @@
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         VISTA BTS OPERATIVO
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div *ngIf="viewMode === 'bts'" class="bts-view">
+
+      <!-- Header BTS -->
+      <div class="bts-header">
+        <div class="bts-title">
+          <mat-icon class="bts-icon">bolt</mat-icon>
+          <div>
+            <h2>BTS Operativo <span class="bts-badge">Back to School</span></h2>
+            <p>Monitor de tubería de inventario · Kommerco × Walmart</p>
+          </div>
+        </div>
+        <div class="bts-header-actions">
+          <button mat-raised-button color="primary" (click)="generateOrder()" [disabled]="filteredBtsProducts.length === 0">
+            <mat-icon>shopping_cart</mat-icon> Generar Pedido
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Cards -->
+      <div class="bts-kpi-row">
+        <div class="bts-kpi-card danger">
+          <mat-icon>warning</mat-icon>
+          <div class="bts-kpi-value">{{ btsKPIs.atRisk }}</div>
+          <div class="bts-kpi-label">Artículos en Riesgo</div>
+          <div class="bts-kpi-sub">Rojo + Naranja</div>
+        </div>
+        <div class="bts-kpi-card warning">
+          <mat-icon>store</mat-icon>
+          <div class="bts-kpi-value">{{ btsKPIs.storesStockout }}</div>
+          <div class="bts-kpi-label">Tiendas sin Stock</div>
+          <div class="bts-kpi-sub">Acumulado artículos</div>
+        </div>
+        <div class="bts-kpi-card info">
+          <mat-icon>check_circle</mat-icon>
+          <div class="bts-kpi-value">{{ btsKPIs.resurtiblePct }}%</div>
+          <div class="bts-kpi-label">% Resurtibles</div>
+          <div class="bts-kpi-sub">{{ btsKPIs.resurtibles }} artículos</div>
+        </div>
+        <div class="bts-kpi-card neutral">
+          <mat-icon>show_chart</mat-icon>
+          <div class="bts-kpi-value">{{ btsKPIs.avgDev }}%</div>
+          <div class="bts-kpi-label">Desv. Forecast</div>
+          <div class="bts-kpi-sub">Promedio portafolio</div>
+        </div>
+      </div>
+
+      <!-- Filtros -->
+      <div class="bts-filters">
+        <mat-form-field appearance="outline" class="bts-filter-field">
+          <mat-label>Semáforo</mat-label>
+          <mat-select [(ngModel)]="btsFilters.semaphore">
+            <mat-option value="all">Todos</mat-option>
+            <mat-option value="red">ROJO</mat-option>
+            <mat-option value="orange">NARANJA</mat-option>
+            <mat-option value="yellow">AMARILLO</mat-option>
+            <mat-option value="green">VERDE</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="bts-filter-field">
+          <mat-label>Cedis</mat-label>
+          <mat-select [(ngModel)]="btsFilters.cedis">
+            <mat-option value="all">Todos</mat-option>
+            <mat-option *ngFor="let c of btsCedisList" [value]="c">{{ c }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="bts-filter-field">
+          <mat-label>Clasificación</mat-label>
+          <mat-select [(ngModel)]="btsFilters.abc">
+            <mat-option value="all">Todos</mat-option>
+            <mat-option value="A">A – Alta rotación</mat-option>
+            <mat-option value="B">B – Media rotación</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="bts-filter-field">
+          <mat-label>Buscar artículo</mat-label>
+          <input matInput [(ngModel)]="btsFilters.search" placeholder="Nombre o ID">
+          <mat-icon matSuffix>search</mat-icon>
+        </mat-form-field>
+
+        <div class="bts-toggle-filters">
+          <mat-slide-toggle [(ngModel)]="btsFilters.onlyResurtible" color="primary">Solo Resurtibles</mat-slide-toggle>
+          <mat-slide-toggle [(ngModel)]="btsFilters.onlyRojo" color="warn">Solo ROJO</mat-slide-toggle>
+        </div>
+      </div>
+
+      <!-- Tabla Operativa -->
+      <div class="bts-table-wrap">
+        <div class="bts-table-header">
+          <span>{{ filteredBtsProducts.length }} artículos · {{ btsFilters.onlyResurtible ? 'Solo Resurtibles' : 'Portafolio completo' }}</span>
+        </div>
+        <div class="table-scroll">
+          <table class="bts-table">
+            <thead>
+              <tr>
+                <th>ABC</th>
+                <th>Artículo</th>
+                <th>Categoría</th>
+                <th>Cedis</th>
+                <th>Formato</th>
+                <th title="itemStatus / mbm / book">Flags</th>
+                <th>Resurtible</th>
+                <th>Stock Tienda</th>
+                <th>Tubería</th>
+                <th>Venta/día</th>
+                <th>DOH Tienda</th>
+                <th>DOH Tubería</th>
+                <th>Falta 1d</th>
+                <th>Falta 3d</th>
+                <th>Falta 7d</th>
+                <th>InStock%</th>
+                <th>Semáforo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let p of filteredBtsProducts" [class.row-red]="p.doh < 50" [class.row-orange]="p.doh >= 50 && p.doh < 60">
+                <td><span class="abc-badge" [class.abc-a]="p.abc === 'A'">{{ p.abc }}</span></td>
+                <td class="name-cell" [title]="p.name">{{ p.name.length > 30 ? (p.name | slice:0:28) + '…' : p.name }}</td>
+                <td>{{ p.category }}</td>
+                <td>{{ p.cedis }}</td>
+                <td>{{ p.formato }}</td>
+                <td class="flags-cell">
+                  <span [class.flag-ok]="p.itemStatus === 'A'" [class.flag-bad]="p.itemStatus !== 'A'" title="itemStatus">{{ p.itemStatus }}</span>
+                  <span [class.flag-ok]="p.mbm === 'M'" [class.flag-bad]="p.mbm !== 'M'" title="mbm">{{ p.mbm }}</span>
+                  <span [class.flag-ok]="p.book === 'Y'" [class.flag-bad]="p.book !== 'Y'" title="book">{{ p.book }}</span>
+                </td>
+                <td>
+                  <mat-icon class="resurtible-icon" [class.yes]="p.isResurtible" [class.no]="!p.isResurtible">
+                    {{ p.isResurtible ? 'check_circle' : 'cancel' }}
+                  </mat-icon>
+                </td>
+                <td class="num-cell">{{ p.currentStock }}</td>
+                <td class="num-cell">{{ p.inTransit + p.inWarehouse + p.onOrder }}</td>
+                <td class="num-cell">{{ p.dailySales | number:'1.1-1' }}</td>
+                <td class="num-cell">{{ p.doh }}</td>
+                <td class="num-cell" [class.low-doh]="p.dohPipeline < 60">{{ p.dohPipeline }}</td>
+                <td class="num-cell shortage" [class.has-shortage]="p.shortage1d > 0">{{ p.shortage1d }}</td>
+                <td class="num-cell shortage" [class.has-shortage]="p.shortage3d > 0">{{ p.shortage3d }}</td>
+                <td class="num-cell shortage" [class.has-shortage]="p.shortage7d > 0">{{ p.shortage7d }}</td>
+                <td class="num-cell">{{ p.inStockPct }}%</td>
+                <td>
+                  <span class="doh-chip" [ngClass]="getBtsDohClass(p.doh)">{{ getBtsDohLabel(p.doh) }}</span>
+                </td>
+              </tr>
+              <tr *ngIf="filteredBtsProducts.length === 0">
+                <td colspan="17" class="empty-row">No hay artículos con los filtros seleccionados</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Pedido -->
+      <div class="bts-bottom-row">
+
+        <!-- Consolidador de Pedido -->
+        <div class="bts-order-card" *ngIf="showOrderPanel">
+          <div class="card-title"><mat-icon>receipt_long</mat-icon> Pedido Consolidado</div>
+          <p class="card-sub">Agrupado por Cedis + Formato · Pack {{ 12 }} uds/caja</p>
+          <table class="order-table">
+            <thead>
+              <tr>
+                <th>Cedis</th>
+                <th>Formato</th>
+                <th>Artículo</th>
+                <th>Uds</th>
+                <th>Cajas</th>
+                <th>Total Uds</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let o of orderLines">
+                <td>{{ o.cedis }}</td>
+                <td>{{ o.formato }}</td>
+                <td class="name-cell">{{ o.articulo }}</td>
+                <td class="num-cell">{{ o.unidadesNecesarias }}</td>
+                <td class="num-cell">{{ o.cajasRequeridas }}</td>
+                <td class="num-cell">{{ o.unidadesTotales }}</td>
+              </tr>
+              <tr *ngIf="orderLines.length === 0">
+                <td colspan="6" class="empty-row">Sin artículos resurtibles con faltante</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bts-order-placeholder" *ngIf="!showOrderPanel">
+          <mat-icon>shopping_cart</mat-icon>
+          <p>Presiona <strong>Generar Pedido</strong> para consolidar las necesidades de resurtido de los artículos filtrados.</p>
+        </div>
+
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           BTS ANALYTICS — Datos Reales (Excel)
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div class="bts-analytics-section" *ngIf="btsAnalyticsReady">
+
+        <div class="bts-analytics-header">
+          <mat-icon>analytics</mat-icon>
+          <h3>Analytics BTS · Datos Reales Semana 10 · 2026</h3>
+          <span class="analytics-badge">{{ btsRealKPIs.totalItems }} artículos</span>
+        </div>
+
+        <!-- KPI cards reales -->
+        <div class="bts-real-kpi-row">
+          <div class="bts-real-kpi">
+            <div class="real-kpi-icon" style="background:#EBF8FF"><mat-icon style="color:#4299E1">speed</mat-icon></div>
+            <div class="real-kpi-body">
+              <div class="real-kpi-value">{{ btsRealKPIs.avgIs1d }}%</div>
+              <div class="real-kpi-label">InStock 1 Día</div>
+            </div>
+          </div>
+          <div class="bts-real-kpi">
+            <div class="real-kpi-icon" style="background:#F0FFF4"><mat-icon style="color:#48BB78">verified</mat-icon></div>
+            <div class="real-kpi-body">
+              <div class="real-kpi-value">{{ btsRealKPIs.avgIs7d }}%</div>
+              <div class="real-kpi-label">InStock 7 Días</div>
+            </div>
+          </div>
+          <div class="bts-real-kpi">
+            <div class="real-kpi-icon" style="background:#FFFAF0"><mat-icon style="color:#ED8936">inventory_2</mat-icon></div>
+            <div class="real-kpi-body">
+              <div class="real-kpi-value">{{ btsRealKPIs.avgDoh | number:'1.0-0' }}</div>
+              <div class="real-kpi-label">DOH Promedio</div>
+            </div>
+          </div>
+          <div class="bts-real-kpi">
+            <div class="real-kpi-icon" style="background:#FFF5F5"><mat-icon style="color:#E53E3E">store</mat-icon></div>
+            <div class="real-kpi-body">
+              <div class="real-kpi-value">{{ btsRealKPIs.totalAgotados | number }}</div>
+              <div class="real-kpi-label">Tiendas Agotadas</div>
+            </div>
+          </div>
+          <div class="bts-real-kpi">
+            <div class="real-kpi-icon" style="background:#F9F0FF"><mat-icon style="color:#805AD5">local_shipping</mat-icon></div>
+            <div class="real-kpi-body">
+              <div class="real-kpi-value">{{ btsRealKPIs.totalResurtible | number }}</div>
+              <div class="real-kpi-label">Tiendas Resurtibles</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Burbuja de Riesgo — columna completa -->
+        <div class="bts-chart-row">
+          <div class="bts-analytics-card">
+            <div class="analytics-card-title">
+              <mat-icon>bubble_chart</mat-icon> Riesgo por Artículo · DOH vs Venta Semanal
+              <span class="card-hint">Solo artículos urgentes (DOH ≤ 70 o faltante &gt; 0) · Arriba-derecha = mayor prioridad</span>
+            </div>
+            <apx-chart *ngIf="bubbleChartOptions"
+              [series]="bubbleChartOptions.series"
+              [chart]="bubbleChartOptions.chart"
+              [colors]="bubbleChartOptions.colors"
+              [dataLabels]="bubbleChartOptions.dataLabels"
+              [xaxis]="bubbleChartOptions.xaxis"
+              [yaxis]="bubbleChartOptions.yaxis"
+              [legend]="bubbleChartOptions.legend"
+              [annotations]="bubbleChartOptions.annotations"
+              [tooltip]="bubbleChartOptions.tooltip"
+              [grid]="bubbleChartOptions.grid">
+            </apx-chart>
+          </div>
+        </div>
+
+        <!-- Panel detalle tiendas (aparece al hacer click en burbuja) -->
+        <div id="bts-store-detail-panel" *ngIf="selectedBubble" class="bts-store-detail-panel">
+
+          <!-- Header del panel -->
+          <div class="store-detail-header">
+            <div class="store-detail-title">
+              <mat-icon>store</mat-icon>
+              <div>
+                <h4>{{ selectedBubble.desc }}</h4>
+                <span class="store-detail-sub">
+                  DOH {{ selectedBubble.doh | number:'1.1-1' }}d &nbsp;·&nbsp;
+                  {{ selectedBubble.agotados }} tiendas agotadas de {{ selectedBubble.stores }} &nbsp;·&nbsp;
+                  Faltante 7D: {{ selectedBubble.falta7d | number }} uds &nbsp;·&nbsp;
+                  Ventas 8 sem: {{ selectedBubble.venta8sem | number }} uds
+                </span>
+              </div>
+            </div>
+            <div class="store-detail-actions">
+              <div class="store-action-hints">
+                <span class="store-sort-hint"><mat-icon>touch_app</mat-icon> Click en columna para ordenar</span>
+                <span class="store-sort-hint"><mat-icon>filter_list</mat-icon> Ícono de embudo para filtrar</span>
+                <span *ngIf="activeFilterCount > 0" class="filter-active-badge">
+                  {{ activeFilterCount }} filtro{{ activeFilterCount > 1 ? 's' : '' }} activo{{ activeFilterCount > 1 ? 's' : '' }}
+                  <button mat-icon-button class="clear-all-btn" (click)="clearAllFilters()" title="Limpiar todos los filtros">
+                    <mat-icon>cancel</mat-icon>
+                  </button>
+                </span>
+              </div>
+              <button mat-icon-button (click)="selectedBubble = null; btsStoreDetail = []; clearAllFilters()" title="Cerrar">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading -->
+          <div *ngIf="btsStoreDetailLoading" class="store-detail-loading">
+            <mat-icon>hourglass_top</mat-icon> Cargando tiendas…
+          </div>
+
+          <!-- Tabla -->
+          <div *ngIf="!btsStoreDetailLoading && btsStoreDetail.length > 0" class="store-detail-scroll" (click)="closeFilterDropdown()">
+            <table class="store-detail-table">
+              <thead>
+                <tr>
+                  <th class="th-idx">#</th>
+                  <ng-container *ngFor="let col of storeTableCols">
+                    <th class="th-sort" [class.th-filtered]="hasActiveFilter(col.key)" (click)="sortStoreBy(col.key)">
+                      <span class="th-inner">
+                        {{ col.label }}
+                        <mat-icon class="sort-icon">{{ storeSortIcon(col.key) }}</mat-icon>
+                        <button class="th-filter-btn" [class.active]="hasActiveFilter(col.key) || storeFilterOpen === col.key"
+                                (click)="toggleFilterDropdown(col.key, $event)" title="Filtrar">
+                          <mat-icon>{{ hasActiveFilter(col.key) ? 'filter_alt' : 'filter_list' }}</mat-icon>
+                        </button>
+                      </span>
+                    </th>
+                  </ng-container>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let s of sortedBtsStoreDetail; let i = index" [ngClass]="getStoreRowClass(s)">
+                  <td class="num-cell">{{ i + 1 }}</td>
+                  <td>
+                    <span *ngIf="s.agotado" class="store-badge agotado">AGOTADO</span>
+                    <span *ngIf="!s.agotado && s.doh < 50"  class="store-badge rojo">ROJO</span>
+                    <span *ngIf="!s.agotado && s.doh >= 50 && s.doh < 60" class="store-badge naranja">NARANJA</span>
+                    <span *ngIf="!s.agotado && s.doh >= 60 && s.doh <= 70" class="store-badge amarillo">AMARILLO</span>
+                  </td>
+                  <td class="store-name-cell" [title]="s.storeName + ' (' + s.storeType + ')'">
+                    {{ s.storeName.length > 22 ? (s.storeName | slice:0:22) + '…' : s.storeName }}
+                  </td>
+                  <td>{{ s.formato }}</td>
+                  <td class="num-cell">{{ s.whseNbr }}</td>
+                  <td class="num-cell" [class.zero-stock]="s.onHand === 0">{{ s.onHand }}</td>
+                  <td class="num-cell">{{ s.inTransit }}</td>
+                  <td class="num-cell">{{ s.inWhse }}</td>
+                  <td class="num-cell">{{ s.onOrder }}</td>
+                  <td class="num-cell">{{ s.promDia | number:'1.1-1' }}</td>
+                  <td class="num-cell" [class.doh-crit]="s.doh < 50" [class.doh-warn]="s.doh >= 50 && s.doh < 70">
+                    {{ s.doh | number:'1.0-0' }}d
+                  </td>
+                  <td class="num-cell shortage" [class.has-shortage]="s.falta1d > 0">{{ s.falta1d }}</td>
+                  <td class="num-cell shortage" [class.has-shortage]="s.falta3d > 0">{{ s.falta3d }}</td>
+                  <td class="num-cell shortage" [class.has-shortage]="s.falta7d > 0">{{ s.falta7d }}</td>
+                  <td class="num-cell">{{ s.venta8sem | number }}</td>
+                  <td>
+                    <mat-icon class="resurtible-icon" [class.yes]="s.resurtible === '1'" [class.no]="s.resurtible !== '1'">
+                      {{ s.resurtible === '1' ? 'check_circle' : 'cancel' }}
+                    </mat-icon>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div *ngIf="!btsStoreDetailLoading && btsStoreDetail.length === 0" class="store-detail-empty">
+            <mat-icon>info</mat-icon> No hay tiendas en riesgo registradas para este artículo.
+          </div>
+
+          <!-- ── Filter dropdown flotante (position:fixed, dentro del *ngIf del panel) ── -->
+          <div *ngIf="storeFilterOpen"
+               class="filter-dropdown-fixed"
+               [style.top.px]="storeFilterPos.top"
+               [style.left.px]="storeFilterPos.left"
+               (click)="$event.stopPropagation()">
+            <div class="filter-search">
+              <input type="text" placeholder="Buscar…"
+                     [(ngModel)]="storeFilterSearch[storeFilterOpen]"
+                     (click)="$event.stopPropagation()" />
+            </div>
+            <div class="filter-options-list">
+              <div class="filter-option select-all" (click)="selectAllFilter(storeFilterOpen, $event)">
+                <input type="checkbox" [checked]="isAllSelected(storeFilterOpen)" readonly />
+                <span>(Seleccionar todo)</span>
+              </div>
+              <div *ngFor="let opt of getFilterOptions(storeFilterOpen)"
+                   class="filter-option"
+                   (click)="toggleFilterValue(storeFilterOpen, opt, $event)">
+                <input type="checkbox" [checked]="isFilterValueActive(storeFilterOpen, opt)" readonly />
+                <span>{{ opt }}</span>
+              </div>
+            </div>
+            <div class="filter-footer">
+              <button class="filter-clear-btn" (click)="clearFilter(storeFilterOpen, $event)">Limpiar</button>
+              <button class="filter-apply-btn" (click)="closeFilterDropdown()">Aceptar</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Fila 1: Ventas 2026 vs Forecast + YoY -->
+        <div class="bts-chart-row">
+          <div class="bts-analytics-card">
+            <div class="analytics-card-title">
+              <mat-icon>bar_chart</mat-icon> Ventas Reales vs Forecast · 2026
+              <span class="card-hint">Ventas sem 04–12 vs pronóstico WM</span>
+            </div>
+            <apx-chart *ngIf="sales2026ChartOptions"
+              [series]="sales2026ChartOptions.series"
+              [chart]="sales2026ChartOptions.chart"
+              [stroke]="sales2026ChartOptions.stroke"
+              [fill]="sales2026ChartOptions.fill"
+              [colors]="sales2026ChartOptions.colors"
+              [dataLabels]="sales2026ChartOptions.dataLabels"
+              [xaxis]="sales2026ChartOptions.xaxis"
+              [yaxis]="sales2026ChartOptions.yaxis"
+              [legend]="sales2026ChartOptions.legend"
+              [tooltip]="sales2026ChartOptions.tooltip">
+            </apx-chart>
+          </div>
+          <div class="bts-analytics-card">
+            <div class="analytics-card-title">
+              <mat-icon>compare_arrows</mat-icon> Comparativo YoY · BTS 2024 vs 2026
+              <span class="card-hint">Tendencia de ventas por semana BTS</span>
+            </div>
+            <apx-chart *ngIf="yoyChartOptions"
+              [series]="yoyChartOptions.series"
+              [chart]="yoyChartOptions.chart"
+              [stroke]="yoyChartOptions.stroke"
+              [colors]="yoyChartOptions.colors"
+              [dataLabels]="yoyChartOptions.dataLabels"
+              [xaxis]="yoyChartOptions.xaxis"
+              [yaxis]="yoyChartOptions.yaxis"
+              [legend]="yoyChartOptions.legend"
+              [tooltip]="yoyChartOptions.tooltip">
+            </apx-chart>
+          </div>
+        </div>
+
+        <!-- Fila 2: Fill Rate + InStock% -->
+        <div class="bts-chart-row">
+          <div class="bts-analytics-card">
+            <div class="analytics-card-title">
+              <mat-icon>trending_up</mat-icon> Fill Rate por Semana · Por Categoría
+              <span class="card-hint">Sem 50/2025 → Sem 10/2026 · Meta 95%</span>
+            </div>
+            <apx-chart *ngIf="fillRateChartOptions"
+              [series]="fillRateChartOptions.series"
+              [chart]="fillRateChartOptions.chart"
+              [stroke]="fillRateChartOptions.stroke"
+              [colors]="fillRateChartOptions.colors"
+              [dataLabels]="fillRateChartOptions.dataLabels"
+              [xaxis]="fillRateChartOptions.xaxis"
+              [yaxis]="fillRateChartOptions.yaxis"
+              [legend]="fillRateChartOptions.legend"
+              [annotations]="fillRateChartOptions.annotations"
+              [tooltip]="fillRateChartOptions.tooltip">
+            </apx-chart>
+          </div>
+          <div class="bts-analytics-card">
+            <div class="analytics-card-title">
+              <mat-icon>fact_check</mat-icon> InStock % por Categoría · 1D / 3D / 7D
+              <span class="card-hint">Nivel de servicio a diferentes horizontes</span>
+            </div>
+            <apx-chart *ngIf="isChartOptions"
+              [series]="isChartOptions.series"
+              [chart]="isChartOptions.chart"
+              [colors]="isChartOptions.colors"
+              [plotOptions]="isChartOptions.plotOptions"
+              [dataLabels]="isChartOptions.dataLabels"
+              [xaxis]="isChartOptions.xaxis"
+              [yaxis]="isChartOptions.yaxis"
+              [legend]="isChartOptions.legend"
+              [annotations]="isChartOptions.annotations"
+              [tooltip]="isChartOptions.tooltip">
+            </apx-chart>
+          </div>
+        </div>
+
+        <!-- Fila 3: DOH Distribution + Forecast Deviation -->
+        <div class="bts-chart-row">
+          <div class="bts-analytics-card">
+            <div class="analytics-card-title">
+              <mat-icon>stacked_bar_chart</mat-icon> Distribución DOH por Categoría
+              <span class="card-hint">Tiendas por rango de días en inventario</span>
+            </div>
+            <apx-chart *ngIf="dohDistChartOptions"
+              [series]="dohDistChartOptions.series"
+              [chart]="dohDistChartOptions.chart"
+              [colors]="dohDistChartOptions.colors"
+              [plotOptions]="dohDistChartOptions.plotOptions"
+              [dataLabels]="dohDistChartOptions.dataLabels"
+              [xaxis]="dohDistChartOptions.xaxis"
+              [yaxis]="dohDistChartOptions.yaxis"
+              [legend]="dohDistChartOptions.legend"
+              [tooltip]="dohDistChartOptions.tooltip">
+            </apx-chart>
+          </div>
+          <div class="bts-analytics-card">
+            <div class="analytics-card-title">
+              <mat-icon>rule</mat-icon> Desviación de Forecast por Categoría
+              <span class="card-hint">% Desv. promedio sem 13–16 · Rojo = sobreestimado</span>
+            </div>
+            <apx-chart *ngIf="desvChartOptions"
+              [series]="desvChartOptions.series"
+              [chart]="desvChartOptions.chart"
+              [colors]="desvChartOptions.colors"
+              [plotOptions]="desvChartOptions.plotOptions"
+              [dataLabels]="desvChartOptions.dataLabels"
+              [xaxis]="desvChartOptions.xaxis"
+              [yaxis]="desvChartOptions.yaxis"
+              [legend]="desvChartOptions.legend"
+              [annotations]="desvChartOptions.annotations"
+              [tooltip]="desvChartOptions.tooltip">
+            </apx-chart>
+          </div>
+        </div>
+
+      </div><!-- /bts-analytics-section -->
+
+      <!-- Loading state mientras cargan los datos reales -->
+      <div class="bts-analytics-loading" *ngIf="!btsAnalyticsReady">
+        <mat-icon>hourglass_top</mat-icon>
+        <p>Cargando datos analíticos…</p>
+      </div>
+
+    </div><!-- /bts-view -->
+
   </div><!-- /main-content -->
 </div><!-- /dashboard-container -->
