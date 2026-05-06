@@ -1,0 +1,6 @@
+store_nbr,store_name,format,cedis,item_nbr,desc,on_hand,in_transit,in_whse,on_order,avg_daily,pos_2sem,wh_pack,vnd_pack
+1001,Supercenter Norte,SUPERCENTER,501,100001,Libreta Espiral 100h,20,5,0,0,4.5,75,6,12
+1002,Supercenter Sur,SUPERCENTER,501,100001,Libreta Espiral 100h,10,0,0,0,4.5,90,6,12
+2001,Bodega Este,BODEGA,502,100002,Lapicero Azul x10,50,10,0,0,3.0,30,12,24
+2002,Bodega Oeste,BODEGA,502,100002,Lapicero Azul x10,5,0,0,0,3.0,65,12,24
+3001,MiBodega Central,MIBODEGA,503,100003,Folder Manila,200,0,0,0,1.2,12,12,12

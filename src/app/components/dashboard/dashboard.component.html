@@ -925,5 +925,213 @@
 
     </div><!-- /bts-view -->
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         VISTA SUGERIDO DE COMPRA
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div *ngIf="viewMode === 'sugerido'" class="sugerido-view">
+
+      <!-- Header -->
+      <div class="sugerido-header">
+        <div class="sugerido-title">
+          <mat-icon>shopping_cart</mat-icon>
+          <div>
+            <h2>Sugerido de Compra</h2>
+            <p>Carga tu archivo de inventario por tienda para calcular las cantidades sugeridas</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload + Config row -->
+      <div class="sugerido-top-row">
+
+        <!-- Upload zone -->
+        <div class="sugerido-upload-zone"
+             (click)="sugeridoFileInput.click()"
+             (dragover)="$event.preventDefault()"
+             (drop)="$event.preventDefault(); sugeridoFileInput.files && (sugeridoFileInput.files = $any($event).dataTransfer.files); onSugeridoFileChange($event)">
+          <input #sugeridoFileInput type="file" accept=".csv,.xlsx,.xls" hidden (change)="onSugeridoFileChange($event)">
+          <mat-icon class="upload-icon">upload_file</mat-icon>
+          <p class="upload-main">Arrastra o haz clic para cargar</p>
+          <span class="upload-sub">CSV o XLSX · Sin límite de filas</span>
+          <span *ngIf="sugeridoFileName" class="upload-filename">
+            <mat-icon>description</mat-icon> {{ sugeridoFileName }}
+          </span>
+          <div *ngIf="sugeridoLoading" class="upload-loading">
+            <mat-spinner diameter="24"></mat-spinner>
+            <span>Procesando…</span>
+          </div>
+          <div *ngIf="sugeridoError" class="upload-error-msg">
+            <mat-icon>error_outline</mat-icon> {{ sugeridoError }}
+          </div>
+          <div *ngIf="sugeridoColWarning" class="upload-warning-msg">
+            <mat-icon>warning_amber</mat-icon> {{ sugeridoColWarning }}
+          </div>
+        </div>
+
+        <!-- Config panel -->
+        <div class="sugerido-config-panel">
+          <h4><mat-icon>tune</mat-icon> Parámetros de cálculo</h4>
+          <div class="config-fields">
+            <div class="config-field">
+              <label>Lead Time (días)</label>
+              <input type="number" [(ngModel)]="sugeridoLeadTime" min="1" max="90" class="config-input">
+            </div>
+            <div class="config-field">
+              <label>Whpck default</label>
+              <input type="number" [(ngModel)]="sugeridoWhpckDefault" min="1" class="config-input">
+            </div>
+            <div class="config-field">
+              <label>Vndpk default</label>
+              <input type="number" [(ngModel)]="sugeridoVndpkDefault" min="1" class="config-input">
+            </div>
+          </div>
+          <p class="config-note">
+            <mat-icon>info_outline</mat-icon>
+            Si el archivo ya incluye columnas lead_time, whpck o vndpk se usan sus valores; estos defaults aplican como fallback.
+          </p>
+        </div>
+      </div>
+
+      <!-- KPI Cards (visible solo si hay datos) -->
+      <div *ngIf="sugeridoRows.length > 0" class="sugerido-kpi-row">
+        <div class="sugerido-kpi-card danger">
+          <mat-icon>inventory_2</mat-icon>
+          <div class="kpi-val">{{ sugeridoKpis.totalItems | number }}</div>
+          <div class="kpi-lbl">Oportunidades</div>
+          <div class="kpi-sub">Filas tienda-artículo con sugerido &gt; 0</div>
+        </div>
+        <div class="sugerido-kpi-card info">
+          <mat-icon>local_shipping</mat-icon>
+          <div class="kpi-val">{{ sugeridoKpis.totalUnidades | number }}</div>
+          <div class="kpi-lbl">Unidades Sugeridas</div>
+          <div class="kpi-sub">Total vndpk a ordenar</div>
+        </div>
+        <div class="sugerido-kpi-card warning">
+          <mat-icon>category</mat-icon>
+          <div class="kpi-val">{{ sugeridoKpis.articulos }}</div>
+          <div class="kpi-lbl"># Artículos</div>
+          <div class="kpi-sub">SKUs únicos con necesidad</div>
+        </div>
+        <div class="sugerido-kpi-card neutral">
+          <mat-icon>store</mat-icon>
+          <div class="kpi-val">{{ sugeridoKpis.tiendas }}</div>
+          <div class="kpi-lbl"># Tiendas</div>
+          <div class="kpi-sub">Tiendas con al menos 1 sugerido</div>
+        </div>
+      </div>
+
+      <!-- Tabs + toolbar (visible solo si hay datos) -->
+      <div *ngIf="sugeridoRows.length > 0" class="sugerido-table-section">
+
+        <!-- Tabs -->
+        <div class="sugerido-tabs">
+          <button class="sugerido-tab" [class.active]="sugeridoViewTab === 'detalle'" (click)="sugeridoViewTab = 'detalle'">
+            <mat-icon>table_rows</mat-icon> Detalle Tda-Art
+          </button>
+          <button class="sugerido-tab" [class.active]="sugeridoViewTab === 'resumen'" (click)="sugeridoViewTab = 'resumen'">
+            <mat-icon>summarize</mat-icon> Resumen CEDIS×Formato
+          </button>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="sugerido-toolbar">
+          <div class="sugerido-search">
+            <mat-icon>search</mat-icon>
+            <input type="text" placeholder="Buscar tienda, artículo, formato…" [(ngModel)]="sugeridoFilter" class="sugerido-search-input">
+          </div>
+          <button class="sugerido-download-btn" (click)="downloadSugeridoExcel()">
+            <mat-icon>download</mat-icon> Descargar Excel
+          </button>
+        </div>
+
+        <!-- DETALLE TABLE -->
+        <div *ngIf="sugeridoViewTab === 'detalle'" class="sugerido-table-wrap">
+          <table class="sugerido-table">
+            <thead>
+              <tr>
+                <th>Tienda</th>
+                <th>Formato</th>
+                <th class="num">CEDIS</th>
+                <th class="num">Artículo</th>
+                <th>Descripción</th>
+                <th class="num">Stock</th>
+                <th class="num">Inv. Total</th>
+                <th class="num">Cob. (días)</th>
+                <th class="num">Falta LT</th>
+                <th class="num">Sug. Whpck</th>
+                <th class="num">Sug. Vndpk</th>
+                <th class="center">Flags</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of filteredSugeridoRows"
+                  [class.row-agotarse-inc]="r.flagAgotarse && r.flagIncremento"
+                  [class.row-agotarse]="r.flagAgotarse && !r.flagIncremento"
+                  [class.row-incremento]="!r.flagAgotarse && r.flagIncremento">
+                <td>{{ r.storeName }}</td>
+                <td><span class="formato-badge">{{ r.formato }}</span></td>
+                <td class="num">{{ r.whseNbr }}</td>
+                <td class="num">{{ r.itemNbr }}</td>
+                <td class="desc-cell">{{ r.itemDesc }}</td>
+                <td class="num">{{ r.onHand | number:'1.0-0' }}</td>
+                <td class="num">{{ r.invTotal | number:'1.0-0' }}</td>
+                <td class="num" [class.cob-low]="r.coberturaActual < r.leadTime">{{ r.coberturaActual | number:'1.1-1' }}d</td>
+                <td class="num">{{ r.faltaLt | number:'1.1-1' }}</td>
+                <td class="num bold">{{ r.sugeridoWhpck | number:'1.0-0' }}</td>
+                <td class="num bold primary">{{ r.sugeridoVndpk | number:'1.0-0' }}</td>
+                <td class="center flags-cell">
+                  <span *ngIf="r.flagAgotarse" class="flag-badge flag-agotarse" title="Riesgo de agotarse antes del reabasto">AGO</span>
+                  <span *ngIf="r.flagIncremento" class="flag-badge flag-incremento" title="Sugerido &gt; 1 vndpk">INC</span>
+                </td>
+              </tr>
+              <tr *ngIf="filteredSugeridoRows.length === 0">
+                <td colspan="12" class="empty-row">Sin resultados para el filtro aplicado</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- RESUMEN TABLE -->
+        <div *ngIf="sugeridoViewTab === 'resumen'" class="sugerido-table-wrap">
+          <table class="sugerido-table">
+            <thead>
+              <tr>
+                <th class="num">CEDIS</th>
+                <th>Formato</th>
+                <th class="num">Artículo</th>
+                <th>Descripción</th>
+                <th class="num"># Tiendas</th>
+                <th class="num">Total Vndpk</th>
+                <th class="num">Vndpk unit.</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of sugeridoResumen">
+                <td class="num">{{ r.whseNbr }}</td>
+                <td><span class="formato-badge">{{ r.formato }}</span></td>
+                <td class="num">{{ r.itemNbr }}</td>
+                <td class="desc-cell">{{ r.itemDesc }}</td>
+                <td class="num">{{ r.nTiendas }}</td>
+                <td class="num bold primary">{{ r.totalVndpk | number:'1.0-0' }}</td>
+                <td class="num">{{ r.vndpk }}</td>
+              </tr>
+              <tr *ngIf="sugeridoResumen.length === 0">
+                <td colspan="7" class="empty-row">Sin datos de resumen</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /sugerido-table-section -->
+
+      <!-- Empty state -->
+      <div *ngIf="sugeridoRows.length === 0 && !sugeridoLoading && !sugeridoError" class="sugerido-empty">
+        <mat-icon>upload_file</mat-icon>
+        <p>Carga un archivo para ver el sugerido de compra</p>
+        <span>Columnas mínimas: tienda, artículo, onHand, promDia (o pos2sem)</span>
+      </div>
+
+    </div><!-- /sugerido-view -->
+
   </div><!-- /main-content -->
 </div><!-- /dashboard-container -->

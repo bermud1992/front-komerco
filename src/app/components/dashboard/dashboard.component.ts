@@ -9,6 +9,22 @@ import { MatPaginator } from '@angular/material/paginator';
 import { MatDialog } from '@angular/material/dialog';
 import { PredictionDialogComponent } from '../dialogs/prediction-dialog/prediction-dialog.component';
 
+export interface SugeridoRow {
+  storeNbr: number; storeName: string; formato: string; whseNbr: number;
+  itemNbr: number; itemDesc: string;
+  onHand: number; inTransit: number; inWhse: number; onOrder: number;
+  invTotal: number; promDia: number; pos2sem: number;
+  coberturaActual: number; faltaLt: number;
+  sugeridoWhpck: number; sugeridoVndpk: number;
+  whpck: number; vndpk: number; leadTime: number;
+  flagIncremento: boolean; flagAgotarse: boolean;
+}
+
+export interface SugeridoResumen {
+  whseNbr: number; formato: string; itemNbr: number; itemDesc: string;
+  totalVndpk: number; nTiendas: number; vndpk: number;
+}
+
 @Component({
   selector: 'app-dashboard',
   templateUrl: './dashboard.component.html',
@@ -19,7 +35,20 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
   // ── Estado general ──────────────────────────────────────────────────────
-  viewMode: 'operativo' | 'table' | 'csv' | 'prediction' | 'welcome' | 'bts' = 'operativo';
+  viewMode: 'operativo' | 'table' | 'csv' | 'prediction' | 'welcome' | 'bts' | 'sugerido' = 'operativo';
+
+  // ── Sugerido de Compra ───────────────────────────────────────────────────
+  sugeridoRows: SugeridoRow[] = [];
+  sugeridoResumen: SugeridoResumen[] = [];
+  sugeridoLoading = false;
+  sugeridoError = '';
+  sugeridoFileName = '';
+  sugeridoLeadTime = 14;
+  sugeridoWhpckDefault = 6;
+  sugeridoVndpkDefault = 6;
+  sugeridoViewTab: 'detalle' | 'resumen' = 'detalle';
+  sugeridoFilter = '';
+  sugeridoColWarning = '';
 
   // ── Datos ───────────────────────────────────────────────────────────────
   selectedProduct:  Product | null = null;
@@ -938,6 +967,343 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       annotations: { yaxis: [{ y: 0, borderColor: '#718096', strokeDashArray: 4 }] },
       tooltip: { y: { formatter: (v: number) => v.toFixed(1) + '%' } },
     };
+  }
+
+  // ── Sugerido de Compra ────────────────────────────────────────────────────
+
+  onSugeridoFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    if (!file) return;
+    this.sugeridoFileName = file.name;
+    this.sugeridoLoading = true;
+    this.sugeridoError = '';
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'csv') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const text = e.target?.result as string;
+          const lines = text.split(/\r?\n/).filter(l => l.trim());
+          if (lines.length < 2) { this.sugeridoError = 'Archivo vacío o sin datos.'; this.sugeridoLoading = false; this.cdr.detectChanges(); return; }
+          const sep = lines[0].includes(';') ? ';' : ',';
+          const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
+          const rows = lines.slice(1).map(line => {
+            const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
+            const obj: any = {};
+            headers.forEach((h, i) => obj[h] = vals[i] ?? '');
+            return obj;
+          });
+          this.processSugeridoData(rows);
+        } catch (err) {
+          this.sugeridoError = 'Error al leer el CSV.';
+          this.sugeridoLoading = false;
+          this.cdr.detectChanges();
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const XLSX = (window as any)['XLSX'];
+          if (!XLSX) { this.sugeridoError = 'SheetJS no disponible.'; this.sugeridoLoading = false; this.cdr.detectChanges(); return; }
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+
+          // Try reading from row 1 first; if headers not found, try row 20 (Walmart retail format)
+          let rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+          if (rows.length > 0) {
+            const firstKeys = Object.keys(rows[0]).map((k: string) => k.toLowerCase());
+            const hasStoreNbr = firstKeys.some((k: string) => k.includes('store') || k.includes('tienda'));
+            if (!hasStoreNbr) {
+              // Try with header row at row 20 (range offset = 19 rows)
+              rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: 19 });
+            }
+          }
+
+          // If Walmart weekly format (has "POS Qty" columns), pre-process into flat format
+          if (rows.length > 0) {
+            const keys = Object.keys(rows[0]);
+            const posKeys = keys.filter((k: string) => /\d{6}\s*POS\s*Qty/i.test(k));
+            const ohKeys  = keys.filter((k: string) => /\d{6}\s*Hist\s*On\s*Hand/i.test(k));
+            if (posKeys.length > 0) {
+              rows = this.preprocessWalmartWeeklyFormat(rows, posKeys, ohKeys);
+            }
+          }
+
+          this.processSugeridoData(rows);
+        } catch (err: any) {
+          this.sugeridoError = 'Error al leer el Excel: ' + (err?.message || err);
+          this.sugeridoLoading = false;
+          this.cdr.detectChanges();
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      this.sugeridoError = 'Formato no soportado. Use .csv o .xlsx';
+      this.sugeridoLoading = false;
+      this.cdr.detectChanges();
+    }
+    // Reset input so same file can be re-uploaded
+    input.value = '';
+  }
+
+  preprocessWalmartWeeklyFormat(rows: any[], posKeys: string[], ohKeys: string[]): any[] {
+    // Sort weeks ascending
+    posKeys.sort();
+    ohKeys.sort();
+
+    return rows.map(row => {
+      // promDia = average of all weekly POS / 7
+      const posVals = posKeys.map((k: string) => parseFloat(String(row[k])) || 0);
+      const totalPos = posVals.reduce((a: number, b: number) => a + b, 0);
+      const weeksWithSales = posVals.filter((v: number) => v > 0).length || 1;
+      const promDia = (totalPos / weeksWithSales) / 7;
+
+      // onHand = last available Hist On Hand (most recent week)
+      let onHand = 0;
+      for (let i = ohKeys.length - 1; i >= 0; i--) {
+        const v = parseFloat(String(row[ohKeys[i]])) || 0;
+        if (v > 0) { onHand = v; break; }
+      }
+      // If still 0, use last column regardless
+      if (onHand === 0 && ohKeys.length > 0) {
+        onHand = parseFloat(String(row[ohKeys[ohKeys.length - 1]])) || 0;
+      }
+
+      // pos2sem = sum of last 2 weeks POS
+      const pos2sem = posKeys.slice(-2).reduce((s: number, k: string) => s + (parseFloat(String(row[k])) || 0), 0);
+
+      return {
+        'storeNbr':   row['Store Nbr']        ?? row['store nbr']   ?? '',
+        'storeName':  row['Store Name']        ?? row['store name']  ?? '',
+        'formato':    row['Store Type Descr']  ?? row['store type descr'] ?? '',
+        'whseNbr':    row['Whse Nbr']          ?? row['whse nbr']    ?? 0,
+        'itemNbr':    row['Item Nbr']          ?? row['item nbr']    ?? '',
+        'itemDesc':   row['Item Desc 1']       ?? row['item desc 1'] ?? '',
+        'vndpk':      row['VNPK Qty']          ?? row['vnpk qty']    ?? 0,
+        'whpck':      row['WHPK Qty']          ?? row['whpk qty']    ?? 0,
+        'onHand':     onHand,
+        'inTransit':  0,
+        'inWhse':     0,
+        'onOrder':    0,
+        'promDia':    promDia,
+        'pos2sem':    pos2sem,
+      };
+    }).filter(r => r['storeNbr'] !== '' && r['itemNbr'] !== '');
+  }
+
+  processSugeridoData(rawRows: any[]): void {
+    const colMaps: Record<string, string[]> = {
+      storeNbr:  ['storenb','tienda','store_nbr','store','nbr_tienda','num_tienda','no_tienda','nbr_store','storenbr'],
+      storeName: ['storename','nombre_tienda','store_name','nombre','name','store name'],
+      formato:   ['formato','format','tipo_tienda','tipo','store type descr','storetypedescr'],
+      whseNbr:   ['whsenb','cedis','wh','warehouse','cedis_nbr','almacen','nbr_cedis','whse nbr','whsenbr'],
+      itemNbr:   ['itemnb','articulo','item_nbr','sku','item','art','nbr_art','item nbr','itemnbr'],
+      itemDesc:  ['itemdesc','descripcion','item_desc','desc','description','nombre_art','item desc 1','itemdesc1'],
+      onHand:    ['onhand','inv_mano','oh','on_hand','inventario','stock','fisico'],
+      inTransit: ['intransit','en_transito','in_transit','transito','transito_dc'],
+      inWhse:    ['inwhse','en_bodega','in_whse','bodega','whse'],
+      onOrder:   ['onorder','en_orden','in_order','orden','pedido'],
+      promDia:   ['promdia','venta_diaria','prom_dia','avg_daily','sales_avg','promedio_diario','avgdaily'],
+      pos2sem:   ['pos2sem','pos_2sem','ventas_2sem','pos_reciente','venta_2sem'],
+      whpck:     ['whpck','wh_pack','whpack','pack_wh','inner_pack','whpk qty','whpkqty'],
+      vndpk:     ['vndpk','vnd_pack','vndpack','vendor_pack','caja_proveedor','master_pack','vnpk qty','vnpkqty'],
+      leadTime:  ['leadtime','lead_time','plazo','lead','tiempo_entrega'],
+    };
+
+    if (rawRows.length === 0) {
+      this.sugeridoError = 'No se encontraron filas de datos.';
+      this.sugeridoLoading = false;
+      this.cdr.detectChanges();
+      return;
+    }
+
+    // Build header → field mapping (normalize: lowercase, remove spaces/underscores)
+    const firstRow = rawRows[0];
+    const headerKeys = Object.keys(firstRow);
+    const fieldMap: Record<string, string> = {};
+    const normalize = (s: string) => s.toLowerCase().trim().replace(/[\s_\-\.]+/g, '');
+    for (const [field, aliases] of Object.entries(colMaps)) {
+      for (const key of headerKeys) {
+        const nk = normalize(key);
+        if (aliases.some(a => normalize(a) === nk || nk.includes(normalize(a)) || normalize(a).includes(nk))) {
+          fieldMap[field] = key;
+          break;
+        }
+      }
+    }
+
+    // Show warning if critical columns missing
+    const missing = ['storeNbr','itemNbr','promDia','onHand'].filter(f => !fieldMap[f]);
+    if (missing.length === 4) {
+      // Nothing matched — show column names to help user
+      const cols = headerKeys.slice(0, 10).join(', ');
+      this.sugeridoError = `No se reconocieron las columnas del archivo. Columnas detectadas: ${cols}${headerKeys.length > 10 ? '…' : ''}`;
+      this.sugeridoLoading = false;
+      this.cdr.detectChanges();
+      return;
+    }
+    this.sugeridoColWarning = missing.length > 0
+      ? `Columnas no encontradas: ${missing.join(', ')} — usando valor 0. Columnas detectadas: ${headerKeys.join(', ')}`
+      : '';
+
+    const num = (row: any, field: string): number => {
+      const k = fieldMap[field];
+      if (!k) return 0;
+      const v = row[k];
+      return parseFloat(String(v).replace(',', '.')) || 0;
+    };
+    const str = (row: any, field: string): string => {
+      const k = fieldMap[field];
+      return k ? String(row[k] ?? '') : '';
+    };
+
+    const lt = this.sugeridoLeadTime;
+    const whpckDef = this.sugeridoWhpckDefault;
+    const vndpkDef = this.sugeridoVndpkDefault;
+
+    const parsed: SugeridoRow[] = rawRows.map(row => {
+      const onHand    = num(row, 'onHand');
+      const inTransit = num(row, 'inTransit');
+      const inWhse    = num(row, 'inWhse');
+      const onOrder   = num(row, 'onOrder');
+      const promDia   = num(row, 'promDia');
+      const pos2sem   = num(row, 'pos2sem');
+      const whpck     = num(row, 'whpck') || whpckDef;
+      const vndpk     = num(row, 'vndpk') || vndpkDef;
+      const leadTime  = num(row, 'leadTime') || lt;
+      const invTotal  = onHand + inTransit + inWhse + onOrder;
+      const prom      = promDia > 0 ? promDia : (pos2sem > 0 ? pos2sem / 14 : 0);
+      const coberturaActual = prom > 0 ? invTotal / prom : 999;
+      const faltaLt   = Math.max(0, prom * leadTime - invTotal);
+
+      // Sugerido en whpck (mínimo pack de bodega), luego redondeado a vndpk
+      const sugeridoRaw  = faltaLt > 0 ? Math.ceil(faltaLt / whpck) * whpck : 0;
+      const sugeridoWhpck = sugeridoRaw;
+      const sugeridoVndpk = sugeridoRaw > 0 ? Math.ceil(sugeridoRaw / vndpk) * vndpk : 0;
+
+      const flagAgotarse   = coberturaActual < leadTime;
+      const flagIncremento = sugeridoVndpk > vndpk;
+
+      return {
+        storeNbr: num(row, 'storeNbr'),
+        storeName: str(row, 'storeName') || `Tienda ${num(row, 'storeNbr')}`,
+        formato: str(row, 'formato') || 'N/A',
+        whseNbr: num(row, 'whseNbr'),
+        itemNbr: num(row, 'itemNbr'),
+        itemDesc: str(row, 'itemDesc') || `Artículo ${num(row, 'itemNbr')}`,
+        onHand, inTransit, inWhse, onOrder,
+        invTotal, promDia: prom, pos2sem,
+        coberturaActual, faltaLt,
+        sugeridoWhpck, sugeridoVndpk,
+        whpck, vndpk, leadTime,
+        flagIncremento, flagAgotarse,
+      };
+    });
+
+    const withSugerido = parsed.filter(r => r.sugeridoVndpk > 0);
+    // If nothing has sugerido > 0, still show all rows so user can see the data loaded
+    const finalRows = withSugerido.length > 0 ? withSugerido : parsed;
+
+    // Sort
+    finalRows.sort((a, b) =>
+      a.formato.localeCompare(b.formato) ||
+      a.whseNbr - b.whseNbr ||
+      a.itemNbr - b.itemNbr ||
+      a.storeNbr - b.storeNbr
+    );
+
+    // Build resumen: group by whseNbr + formato + itemNbr
+    const resumenMap = new Map<string, SugeridoResumen>();
+    for (const r of finalRows) {
+      const key = `${r.whseNbr}|${r.formato}|${r.itemNbr}`;
+      if (!resumenMap.has(key)) {
+        resumenMap.set(key, {
+          whseNbr: r.whseNbr, formato: r.formato,
+          itemNbr: r.itemNbr, itemDesc: r.itemDesc,
+          totalVndpk: 0, nTiendas: 0, vndpk: r.vndpk,
+        });
+      }
+      const entry = resumenMap.get(key)!;
+      entry.totalVndpk += r.sugeridoVndpk;
+      entry.nTiendas += 1;
+    }
+    this.sugeridoResumen = Array.from(resumenMap.values()).sort((a, b) =>
+      a.formato.localeCompare(b.formato) || a.whseNbr - b.whseNbr || a.itemNbr - b.itemNbr
+    );
+
+    this.sugeridoRows = finalRows;
+    if (withSugerido.length === 0 && parsed.length > 0) {
+      this.sugeridoColWarning = (this.sugeridoColWarning ? this.sugeridoColWarning + ' · ' : '') +
+        `Todas las ${parsed.length} filas tienen sugerido = 0. Revisa las columnas de inventario y venta diaria.`;
+    }
+    this.sugeridoLoading = false;
+    this.cdr.detectChanges();
+  }
+
+  get filteredSugeridoRows(): SugeridoRow[] {
+    if (!this.sugeridoFilter.trim()) return this.sugeridoRows;
+    const q = this.sugeridoFilter.toLowerCase();
+    return this.sugeridoRows.filter(r =>
+      r.storeName.toLowerCase().includes(q) ||
+      r.itemDesc.toLowerCase().includes(q) ||
+      r.formato.toLowerCase().includes(q)
+    );
+  }
+
+  get sugeridoKpis() {
+    const rows = this.filteredSugeridoRows;
+    return {
+      totalItems: rows.length,
+      totalUnidades: rows.reduce((s, r) => s + r.sugeridoVndpk, 0),
+      tiendas: new Set(rows.map(r => r.storeNbr)).size,
+      articulos: new Set(rows.map(r => r.itemNbr)).size,
+    };
+  }
+
+  downloadSugeridoExcel(): void {
+    const XLSX = (window as any)['XLSX'];
+    if (!XLSX) { alert('SheetJS no disponible'); return; }
+
+    const detalleData = this.filteredSugeridoRows.map(r => ({
+      'Tienda': r.storeNbr,
+      'Nombre Tienda': r.storeName,
+      'Formato': r.formato,
+      'CEDIS': r.whseNbr,
+      'Artículo': r.itemNbr,
+      'Descripción': r.itemDesc,
+      'Stock': r.onHand,
+      'En Tránsito': r.inTransit,
+      'En Bodega': r.inWhse,
+      'En Orden': r.onOrder,
+      'Inv. Total': r.invTotal,
+      'Venta/Día': parseFloat(r.promDia.toFixed(2)),
+      'Cobertura (días)': parseFloat(r.coberturaActual.toFixed(1)),
+      'Falta LT': parseFloat(r.faltaLt.toFixed(1)),
+      'Sugerido Whpck': r.sugeridoWhpck,
+      'Sugerido Vndpk': r.sugeridoVndpk,
+      'Flag Agotarse': r.flagAgotarse ? 'Sí' : 'No',
+      'Flag Incremento': r.flagIncremento ? 'Sí' : 'No',
+    }));
+
+    const resumenData = this.sugeridoResumen.map(r => ({
+      'CEDIS': r.whseNbr,
+      'Formato': r.formato,
+      'Artículo': r.itemNbr,
+      'Descripción': r.itemDesc,
+      '# Tiendas': r.nTiendas,
+      'Total Vndpk': r.totalVndpk,
+      'Vndpk unitario': r.vndpk,
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detalleData), 'Detalle');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumenData), 'Resumen CEDIS');
+    XLSX.writeFile(wb, `sugerido_compra_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
   // ── Helpers privados ──────────────────────────────────────────────────────

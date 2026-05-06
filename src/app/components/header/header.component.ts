@@ -14,6 +14,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
   navTabs = [
     { label: 'Operativo',           icon: 'dashboard',              key: 'operativo'  as AppView },
     { label: 'BTS Operativo',       icon: 'bolt',                   key: 'bts'        as AppView },
+    { label: 'Sugerido de Compra',  icon: 'shopping_cart',          key: 'sugerido'   as AppView },
     { label: 'Inventario',          icon: 'inventory_2',            key: 'table'      as AppView },
     { label: 'Catálogo CSV',        icon: 'insert_drive_file',      key: 'csv'        as AppView },
     { label: 'Análisis Predictivo', icon: 'analytics',              key: 'prediction' as AppView },
