@@ -82,6 +82,21 @@ export interface BtsStoreDetail {
   resurtible: string;
 }
 
+export interface BtsStoreGroup {
+  itemNbr:    number;
+  desc:       string;
+  whseNbr:    number;
+  formato:    string;
+  storeCount: number;
+  agotados:   number;
+  dohAvg:     number;
+  falta1d:    number;
+  falta3d:    number;
+  falta7d:    number;
+  venta8sem:  number;
+  promDia:    number;
+}
+
 export interface BtsProduct extends Product {
   inTransit:         number;
   inWarehouse:       number;
@@ -143,6 +158,12 @@ export interface DohDistribution {
   green: number;
 }
 
+export interface StoreCatalogEntry {
+  storeName: string;
+  formato:   string;
+  whseNbr:   number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class DataService {
   private productsSubject       = new BehaviorSubject<Product[]>([]);
@@ -150,12 +171,15 @@ export class DataService {
   private btsItemsSubject       = new BehaviorSubject<BtsItemKPI[]>([]);
   private btsWeekly2026Subject  = new BehaviorSubject<BtsWeekly2026[]>([]);
   private btsWeekly2024Subject  = new BehaviorSubject<BtsWeekly2024[]>([]);
+  private btsStoreGroupsSubject = new BehaviorSubject<BtsStoreGroup[]>([]);
+  private storeCatalogMap       = new Map<number, StoreCatalogEntry>();
 
-  products$:       Observable<Product[]>       = this.productsSubject.asObservable();
-  csvProducts$:    Observable<CSVProduct[]>    = this.csvProductsSubject.asObservable();
-  btsItems$:       Observable<BtsItemKPI[]>    = this.btsItemsSubject.asObservable();
-  btsWeekly2026$:  Observable<BtsWeekly2026[]> = this.btsWeekly2026Subject.asObservable();
-  btsWeekly2024$:  Observable<BtsWeekly2024[]> = this.btsWeekly2024Subject.asObservable();
+  products$:        Observable<Product[]>        = this.productsSubject.asObservable();
+  csvProducts$:     Observable<CSVProduct[]>     = this.csvProductsSubject.asObservable();
+  btsItems$:        Observable<BtsItemKPI[]>     = this.btsItemsSubject.asObservable();
+  btsWeekly2026$:   Observable<BtsWeekly2026[]>  = this.btsWeekly2026Subject.asObservable();
+  btsWeekly2024$:   Observable<BtsWeekly2024[]>  = this.btsWeekly2024Subject.asObservable();
+  btsStoreGroups$:  Observable<BtsStoreGroup[]>  = this.btsStoreGroupsSubject.asObservable();
 
   constructor(private http: HttpClient) {
     this.loadMockData();
@@ -166,6 +190,21 @@ export class DataService {
     this.http.get<BtsItemKPI[]>('assets/bts-items.json').subscribe(d => this.btsItemsSubject.next(d));
     this.http.get<BtsWeekly2026[]>('assets/bts-weekly-2026.json').subscribe(d => this.btsWeekly2026Subject.next(d));
     this.http.get<BtsWeekly2024[]>('assets/bts-weekly-2024.json').subscribe(d => this.btsWeekly2024Subject.next(d));
+    this.http.get<BtsStoreGroup[]>('assets/bts-store-groups.json').subscribe(d => this.btsStoreGroupsSubject.next(d));
+    this.http.get('assets/diccionarioCedisTiendas.csv', { responseType: 'text' }).subscribe(text => {
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split('\t');
+        if (parts.length < 4) continue;
+        const nbr = parseInt(parts[0].trim(), 10);
+        if (isNaN(nbr)) continue;
+        this.storeCatalogMap.set(nbr, {
+          storeName: parts[1].trim(),
+          formato:   parts[2].trim(),
+          whseNbr:   parseInt(parts[3].trim(), 10) || 0,
+        });
+      }
+    });
   }
 
   // ── Helpers para gráficas BTS ─────────────────────────────────────────────
@@ -294,9 +333,11 @@ export class DataService {
     };
   }
 
-  getBtsItems():      BtsItemKPI[]    { return this.btsItemsSubject.value; }
-  getBtsWeekly2026(): BtsWeekly2026[] { return this.btsWeekly2026Subject.value; }
-  getBtsWeekly2024(): BtsWeekly2024[] { return this.btsWeekly2024Subject.value; }
+  getBtsItems():        BtsItemKPI[]     { return this.btsItemsSubject.value; }
+  getBtsWeekly2026():   BtsWeekly2026[]  { return this.btsWeekly2026Subject.value; }
+  getBtsWeekly2024():   BtsWeekly2024[]  { return this.btsWeekly2024Subject.value; }
+  getBtsStoreGroups():  BtsStoreGroup[]  { return this.btsStoreGroupsSubject.value; }
+  getStoreCatalog():    Map<number, StoreCatalogEntry> { return this.storeCatalogMap; }
 
   loadBtsStoreDetail(itemNbr: number): Observable<{ itemNbr: number; stores: BtsStoreDetail[] }> {
     return this.http.get<{ itemNbr: number; stores: BtsStoreDetail[] }>(`assets/bts-stores/${itemNbr}.json`);

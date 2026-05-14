@@ -650,7 +650,7 @@
           <div class="bts-analytics-card">
             <div class="analytics-card-title">
               <mat-icon>bubble_chart</mat-icon> Riesgo por Artículo · DOH vs Venta Semanal
-              <span class="card-hint">Solo artículos urgentes (DOH ≤ 70 o faltante &gt; 0) · Arriba-derecha = mayor prioridad</span>
+              <span class="card-hint">Por Artículo · CEDIS · Formato (agotados &gt; 0 o faltante &gt; 0) · Arriba-derecha = mayor prioridad</span>
             </div>
             <apx-chart *ngIf="bubbleChartOptions"
               [series]="bubbleChartOptions.series"
@@ -677,6 +677,8 @@
               <div>
                 <h4>{{ selectedBubble.desc }}</h4>
                 <span class="store-detail-sub">
+                  CEDIS: {{ selectedBubble.whseNbr }} &nbsp;·&nbsp;
+                  Formato: {{ selectedBubble.formato }} &nbsp;·&nbsp;
                   DOH {{ selectedBubble.doh | number:'1.1-1' }}d &nbsp;·&nbsp;
                   {{ selectedBubble.agotados }} tiendas agotadas de {{ selectedBubble.stores }} &nbsp;·&nbsp;
                   Faltante 7D: {{ selectedBubble.falta7d | number }} uds &nbsp;·&nbsp;
@@ -763,7 +765,7 @@
           </div>
 
           <div *ngIf="!btsStoreDetailLoading && btsStoreDetail.length === 0" class="store-detail-empty">
-            <mat-icon>info</mat-icon> No hay tiendas en riesgo registradas para este artículo.
+            <mat-icon>info</mat-icon> No hay tiendas registradas para esta combinación artículo · CEDIS · formato.
           </div>
 
           <!-- ── Filter dropdown flotante (position:fixed, dentro del *ngIf del panel) ── -->
@@ -795,6 +797,76 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- ── Panel "No Enviar" ─────────────────────────────────────────── -->
+        <div *ngIf="selectedBubble" class="no-enviar-panel">
+          <div class="no-enviar-header">
+            <mat-icon>rule</mat-icon>
+            <span>Regla de Envío · <b>{{ selectedBubble.desc }}</b> · CEDIS {{ selectedBubble.whseNbr }} · {{ selectedBubble.formato }}</span>
+          </div>
+
+          <!-- Config sliders -->
+          <div class="no-enviar-config-row">
+            <div class="ne-config-item">
+              <label>% mín. tiendas agotadas</label>
+              <div class="ne-slider-row">
+                <input type="range" min="5" max="80" step="5" [(ngModel)]="noEnviarConfig.minPctAgotadas">
+                <span class="ne-val">{{ noEnviarConfig.minPctAgotadas }}%</span>
+              </div>
+            </div>
+            <div class="ne-config-item">
+              <label>Faltante 7D mín. (uds)</label>
+              <div class="ne-slider-row">
+                <input type="range" min="0" max="200" step="5" [(ngModel)]="noEnviarConfig.minFalta7d">
+                <span class="ne-val">{{ noEnviarConfig.minFalta7d }}</span>
+              </div>
+            </div>
+            <div class="ne-config-item">
+              <label>Tiendas agotadas mín. (abs.)</label>
+              <div class="ne-slider-row">
+                <input type="range" min="1" max="20" step="1" [(ngModel)]="noEnviarConfig.minTiendasAgot">
+                <span class="ne-val">{{ noEnviarConfig.minTiendasAgot }}</span>
+              </div>
+            </div>
+            <div class="ne-config-item">
+              <label>Vendor Pack (uds/caja)</label>
+              <div class="ne-slider-row">
+                <input type="range" min="1" max="48" step="1" [(ngModel)]="noEnviarConfig.vndpkSize">
+                <span class="ne-val">{{ noEnviarConfig.vndpkSize }}</span>
+              </div>
+            </div>
+            <div class="ne-config-item">
+              <label>Lead Time (días)</label>
+              <div class="ne-slider-row">
+                <input type="range" min="7" max="45" step="1" [(ngModel)]="noEnviarConfig.leadTimeDias">
+                <span class="ne-val">{{ noEnviarConfig.leadTimeDias }}d</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Resultado -->
+          <div *ngIf="noEnviarRecomendacion as rec" class="no-enviar-result">
+            <div class="ne-decision" [ngClass]="{
+              'ne-enviar':    rec.decision === 'ENVIAR',
+              'ne-no-enviar': rec.decision === 'NO ENVIAR',
+              'ne-revisar':   rec.decision === 'REVISAR'
+            }">
+              <mat-icon>{{ rec.decision === 'ENVIAR' ? 'check_circle' : rec.decision === 'NO ENVIAR' ? 'cancel' : 'help' }}</mat-icon>
+              <span class="ne-decision-label">{{ rec.decision }}</span>
+            </div>
+            <div class="ne-reason">{{ rec.razon }}</div>
+            <div class="ne-detalle">
+              <div *ngFor="let d of rec.detalle" class="ne-detalle-line">
+                <mat-icon>chevron_right</mat-icon> {{ d }}
+              </div>
+              <div class="ne-detalle-line">
+                <mat-icon>chevron_right</mat-icon>
+                Cajas a generar si se aprueba: {{ noEnviarConfig.minFalta7d > 0 ? (Math.ceil(selectedBubble.falta7d / noEnviarConfig.vndpkSize)) : '—' }} caja(s) máster
+                ({{ noEnviarConfig.vndpkSize }} uds/caja × {{ selectedBubble.agotados }} tiendas destino)
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Fila 1: Ventas 2026 vs Forecast + YoY -->
@@ -1132,6 +1204,264 @@
       </div>
 
     </div><!-- /sugerido-view -->
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VISTA FOTO DEL FUTURO (Semana 33)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div *ngIf="viewMode === 'foto-futuro'" class="foto-futuro-view">
+
+      <div class="ff-header">
+        <div class="ff-title">
+          <mat-icon>photo_camera</mat-icon>
+          <div>
+            <h2>Foto del Futuro · Semana 33</h2>
+            <p>Proyección de inventario desde sem. {{ CURRENT_WEEK }} hasta fin de BTS (sem. 33) · Consumo basado en Forecast + curva 2024</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="ff-kpi-row" *ngIf="fotoFuturaRows.length > 0">
+        <div class="ff-kpi-card agotado" (click)="fotoFuturaFilter = fotoFuturaFilter === 'agotado' ? 'all' : 'agotado'" [class.active]="fotoFuturaFilter === 'agotado'">
+          <mat-icon>error</mat-icon>
+          <div class="kpi-val">{{ fotoFuturaKpis.agotado }}</div>
+          <div class="kpi-label">Se agotarán antes de sem. 28</div>
+        </div>
+        <div class="ff-kpi-card critico" (click)="fotoFuturaFilter = fotoFuturaFilter === 'critico' ? 'all' : 'critico'" [class.active]="fotoFuturaFilter === 'critico'">
+          <mat-icon>warning</mat-icon>
+          <div class="kpi-val">{{ fotoFuturaKpis.critico }}</div>
+          <div class="kpi-label">Agotarán antes de sem. 33</div>
+        </div>
+        <div class="ff-kpi-card ok" (click)="fotoFuturaFilter = fotoFuturaFilter === 'ok' ? 'all' : 'ok'" [class.active]="fotoFuturaFilter === 'ok'">
+          <mat-icon>check_circle</mat-icon>
+          <div class="kpi-val">{{ fotoFuturaKpis.ok }}</div>
+          <div class="kpi-label">Llegarán bien a sem. 33</div>
+        </div>
+        <div class="ff-kpi-card sobra" (click)="fotoFuturaFilter = fotoFuturaFilter === 'sobra' ? 'all' : 'sobra'" [class.active]="fotoFuturaFilter === 'sobra'">
+          <mat-icon>inventory_2</mat-icon>
+          <div class="kpi-val">{{ fotoFuturaKpis.sobra }}</div>
+          <div class="kpi-label">Sobreinventario proyectado</div>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="ff-toolbar" *ngIf="fotoFuturaRows.length > 0">
+        <div class="ff-search">
+          <mat-icon>search</mat-icon>
+          <input type="text" placeholder="Buscar artículo…" [(ngModel)]="fotoFuturaSearch">
+        </div>
+        <span class="ff-count">{{ filteredFotoFutura.length }} artículos</span>
+      </div>
+
+      <!-- Tabla -->
+      <div class="ff-table-wrap" *ngIf="fotoFuturaRows.length > 0">
+        <table class="ff-table">
+          <thead>
+            <tr>
+              <th>Estado sem. 33</th>
+              <th>Artículo</th>
+              <th>Descripción</th>
+              <th>Formato</th>
+              <th class="num">Pipeline actual</th>
+              <th class="num">Consumo proj. sem 14–33</th>
+              <th class="num">Remanente sem. 33</th>
+              <th class="num">Sem. de agotado</th>
+              <th class="num">Prom/día</th>
+              <th>Curva (sem 14–33)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let r of filteredFotoFutura" [ngClass]="{
+              'ff-row-agotado': r.status === 'agotado',
+              'ff-row-critico': r.status === 'critico',
+              'ff-row-sobra':   r.status === 'sobra'
+            }">
+              <td>
+                <span class="ff-badge" [ngClass]="'ff-badge-' + r.status">
+                  {{ r.status === 'agotado' ? 'AGOTADO' : r.status === 'critico' ? 'CRÍTICO' : r.status === 'sobra' ? 'SOBRA' : 'OK' }}
+                </span>
+              </td>
+              <td class="num-cell">{{ r.itemNbr }}</td>
+              <td class="ff-desc" [title]="r.desc">{{ r.desc.length > 28 ? (r.desc | slice:0:26) + '…' : r.desc }}</td>
+              <td><span class="formato-badge">{{ r.formato }}</span></td>
+              <td class="num-cell">{{ r.pipeline | number:'1.0-0' }}</td>
+              <td class="num-cell">{{ r.acumConsumo | number:'1.0-0' }}</td>
+              <td class="num-cell" [class.neg]="r.remainder33 < 0">
+                {{ r.remainder33 | number:'1.0-0' }}
+              </td>
+              <td class="num-cell">
+                <span *ngIf="r.stockoutWeek" class="stockout-sem">Sem. {{ r.stockoutWeek }}</span>
+                <span *ngIf="!r.stockoutWeek">—</span>
+              </td>
+              <td class="num-cell">{{ r.promDia | number:'1.1-1' }}</td>
+              <td class="sparkline-cell">
+                <div class="mini-bar-row">
+                  <div *ngFor="let v of r.consumoSem; let i = index"
+                       class="mini-bar"
+                       [style.height.px]="v > 0 ? (v / maxOf(r.consumoSem)) * 28 + 4 : 2"
+                       [class.mini-bar-after-stockout]="r.stockoutWeek !== null && (14 + i) >= r.stockoutWeek"
+                       [title]="'Sem ' + (14 + i) + ': ' + (v | number:'1.0-0') + ' uds'">
+                  </div>
+                </div>
+              </td>
+            </tr>
+            <tr *ngIf="filteredFotoFutura.length === 0">
+              <td colspan="10" class="empty-row">Sin artículos para el filtro seleccionado</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Empty state -->
+      <div *ngIf="fotoFuturaRows.length === 0" class="ff-empty">
+        <mat-icon>hourglass_empty</mat-icon>
+        <p>Cargando proyección… asegúrate de tener datos en BTS Operativo</p>
+      </div>
+
+    </div><!-- /foto-futuro-view -->
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VISTA ALERTAS PROACTIVAS
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div *ngIf="viewMode === 'alertas'" class="alertas-view">
+
+      <div class="al-header">
+        <div class="al-title">
+          <mat-icon>notifications_active</mat-icon>
+          <div>
+            <h2>Alertas Proactivas</h2>
+            <p>Picos y valles de demanda detectados para las próximas {{ TARGET_WEEK - CURRENT_WEEK }} semanas · Basado en curva 2024</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="al-kpi-row" *ngIf="alertasRows.length > 0">
+        <div class="al-kpi-card pico-alta">
+          <mat-icon>trending_up</mat-icon>
+          <div class="kpi-val">{{ alertasKpis.picos }}</div>
+          <div class="kpi-label">PICOS urgentes (≤ 3 sem.)</div>
+        </div>
+        <div class="al-kpi-card valle-alta">
+          <mat-icon>trending_down</mat-icon>
+          <div class="kpi-val">{{ alertasKpis.valles }}</div>
+          <div class="kpi-label">VALLES urgentes (≤ 3 sem.)</div>
+        </div>
+        <div class="al-kpi-card media">
+          <mat-icon>schedule</mat-icon>
+          <div class="kpi-val">{{ alertasKpis.mediaAlta }}</div>
+          <div class="kpi-label">Alertas alta+media prioridad</div>
+        </div>
+        <div class="al-kpi-card total">
+          <mat-icon>notifications</mat-icon>
+          <div class="kpi-val">{{ alertasKpis.total }}</div>
+          <div class="kpi-label">Total alertas detectadas</div>
+        </div>
+      </div>
+
+      <!-- Config umbrales -->
+      <div class="al-config-row" *ngIf="alertasRows.length > 0 || true">
+        <div class="al-config-card">
+          <h4><mat-icon>tune</mat-icon> Configurar umbrales</h4>
+          <div class="al-config-fields">
+            <label>Umbral PICO (% sobre promedio 2024)
+              <div class="ne-slider-row">
+                <input type="range" min="5" max="100" step="5" [(ngModel)]="alertasPicoUmbral" (change)="rebuildAlertas()">
+                <span class="ne-val">+{{ alertasPicoUmbral }}%</span>
+              </div>
+            </label>
+            <label>Umbral VALLE (% bajo promedio 2024)
+              <div class="ne-slider-row">
+                <input type="range" min="5" max="100" step="5" [(ngModel)]="alertasValleUmbral" (change)="rebuildAlertas()">
+                <span class="ne-val">-{{ alertasValleUmbral }}%</span>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="al-filters">
+          <button class="al-filter-btn" [class.active]="alertasTipoFilter === 'all'" (click)="alertasTipoFilter = 'all'">Todos</button>
+          <button class="al-filter-btn pico" [class.active]="alertasTipoFilter === 'PICO'" (click)="alertasTipoFilter = 'PICO'">🔴 PICO</button>
+          <button class="al-filter-btn valle" [class.active]="alertasTipoFilter === 'VALLE'" (click)="alertasTipoFilter = 'VALLE'">🔵 VALLE</button>
+          <button class="al-filter-btn" [class.active]="alertasUrgFilter === 'alta'" (click)="alertasUrgFilter = alertasUrgFilter === 'alta' ? 'all' : 'alta'">Solo urgentes</button>
+        </div>
+      </div>
+
+      <!-- Tabla -->
+      <div class="al-table-wrap" *ngIf="filteredAlertas.length > 0">
+        <table class="al-table">
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Urgencia</th>
+              <th>Sem.</th>
+              <th class="num">Semanas para actuar</th>
+              <th class="num">Artículo</th>
+              <th>Descripción</th>
+              <th>Formato</th>
+              <th class="num">Venta est. (uds/sem)</th>
+              <th class="num">Ratio vs 2024 prom.</th>
+              <th class="num">Stock actual (tubería)</th>
+              <th class="num">Cobertura (sem)</th>
+              <th>Acción sugerida</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let a of filteredAlertas" [ngClass]="{
+              'al-row-pico-alta':  a.tipo === 'PICO'  && a.urgencia === 'alta',
+              'al-row-valle-alta': a.tipo === 'VALLE' && a.urgencia === 'alta',
+              'al-row-media':      a.urgencia === 'media',
+              'al-row-baja':       a.urgencia === 'baja'
+            }">
+              <td>
+                <span class="al-tipo-badge" [ngClass]="'al-tipo-' + a.tipo.toLowerCase()">
+                  {{ a.tipo === 'PICO' ? '📈 PICO' : '📉 VALLE' }}
+                </span>
+              </td>
+              <td>
+                <span class="al-urg-badge" [ngClass]="'al-urg-' + a.urgencia">
+                  {{ a.urgencia | uppercase }}
+                </span>
+              </td>
+              <td class="num-cell">Sem. {{ a.semana }}</td>
+              <td class="num-cell"><b>{{ a.semanasHasta }}</b> sem.</td>
+              <td class="num-cell">{{ a.itemNbr }}</td>
+              <td class="ff-desc" [title]="a.desc">{{ a.desc.length > 26 ? (a.desc | slice:0:24) + '…' : a.desc }}</td>
+              <td><span class="formato-badge">{{ a.formato }}</span></td>
+              <td class="num-cell">{{ a.ventaEst | number:'1.0-0' }}</td>
+              <td class="num-cell">
+                <span [class.ratio-high]="a.ratio2024 > 1.2" [class.ratio-low]="a.ratio2024 < 0.8">
+                  {{ a.ratio2024 | number:'1.2-2' }}×
+                </span>
+              </td>
+              <td class="num-cell">{{ a.stockActual | number:'1.0-0' }}</td>
+              <td class="num-cell" [class.cob-low]="a.coberturaSem < a.semanasHasta">{{ a.coberturaSem | number:'1.1-1' }}</td>
+              <td class="al-accion">
+                <span *ngIf="a.tipo === 'PICO' && a.coberturaSem < a.semanasHasta" class="al-accion-urgente">
+                  ⚡ Generar orden urgente — cobertura insuficiente
+                </span>
+                <span *ngIf="a.tipo === 'PICO' && a.coberturaSem >= a.semanasHasta" class="al-accion-ok">
+                  ✓ Stock alcanza — monitorear
+                </span>
+                <span *ngIf="a.tipo === 'VALLE'" class="al-accion-frenar">
+                  ⏸ Frenar / pausar órdenes automáticas
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div *ngIf="filteredAlertas.length === 0 && alertasRows.length > 0" class="al-empty">
+        <mat-icon>check_circle</mat-icon>
+        <p>Sin alertas para el filtro seleccionado</p>
+      </div>
+
+      <div *ngIf="alertasRows.length === 0" class="al-empty">
+        <mat-icon>hourglass_empty</mat-icon>
+        <p>Cargando alertas… asegúrate de tener datos BTS 2024 y 2026 cargados</p>
+      </div>
+
+    </div><!-- /alertas-view -->
 
   </div><!-- /main-content -->
 </div><!-- /dashboard-container -->

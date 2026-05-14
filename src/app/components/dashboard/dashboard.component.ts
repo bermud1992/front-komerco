@@ -25,6 +25,33 @@ export interface SugeridoResumen {
   totalVndpk: number; nTiendas: number; vndpk: number;
 }
 
+export interface FotoFuturaRow {
+  itemNbr:      number;
+  desc:         string;
+  formato:      string;
+  pipeline:     number;   // onHand + inTransit + inWhse + onOrder
+  consumoSem:   number[]; // consumption per week (weeks 14..33), length=20
+  acumConsumo:  number;   // total consumption weeks 14..33
+  remainder33:  number;   // pipeline - acumConsumo
+  stockoutWeek: number | null; // week number when inventory hits 0 (null = never)
+  status:       'agotado' | 'critico' | 'ok' | 'sobra';
+  promDia:      number;
+}
+
+export interface AlertaRow {
+  itemNbr:     number;
+  desc:        string;
+  formato:     string;
+  tipo:        'PICO' | 'VALLE';
+  semana:      number;  // week number (14..33)
+  semanasHasta: number; // weeks from now
+  ratio2024:   number;  // pos2024[w] / avg2024BTS
+  ventaEst:    number;  // estimated weekly sales for that week
+  stockActual: number;  // current pipeline
+  coberturaSem: number; // weeks of stock at current rate
+  urgencia:    'alta' | 'media' | 'baja';
+}
+
 @Component({
   selector: 'app-dashboard',
   templateUrl: './dashboard.component.html',
@@ -35,7 +62,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild(MatPaginator) paginator!: MatPaginator;
 
   // ── Estado general ──────────────────────────────────────────────────────
-  viewMode: 'operativo' | 'table' | 'csv' | 'prediction' | 'welcome' | 'bts' | 'sugerido' = 'operativo';
+  viewMode: 'operativo' | 'table' | 'csv' | 'prediction' | 'welcome' | 'bts' | 'sugerido' | 'foto-futuro' | 'alertas' = 'operativo';
 
   // ── Sugerido de Compra ───────────────────────────────────────────────────
   sugeridoRows: SugeridoRow[] = [];
@@ -106,12 +133,35 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   btsAnalyticsReady = false;
 
   // ── BTS Store Detail Panel ─────────────────────────────────────────────────
-  selectedBubble: { itemNbr: number; desc: string; doh: number; agotados: number; stores: number; falta7d: number; venta8sem: number } | null = null;
+  selectedBubble: { itemNbr: number; desc: string; whseNbr: number; formato: string; doh: number; agotados: number; stores: number; falta7d: number; venta8sem: number } | null = null;
   btsStoreDetail: BtsStoreDetail[] = [];
   sortedBtsStoreDetail: BtsStoreDetail[] = [];
   btsStoreDetailLoading = false;
   btsStoreDetailSort: keyof BtsStoreDetail | 'priority' = 'priority';
   btsStoreDetailDir: 'asc' | 'desc' = 'asc';
+
+  // ── No Enviar Panel ───────────────────────────────────────────────────────
+  noEnviarConfig = {
+    minPctAgotadas:  30,   // % mínimo de tiendas agotadas para justificar envío
+    minFalta7d:      10,   // unidades mínimas de faltante en 7d
+    minTiendasAgot:  2,    // número mínimo absoluto de tiendas agotadas
+    vndpkSize:       6,    // vendor pack (cajas por caja máster)
+    leadTimeDias:    21,   // días de lead time para evaluar urgencia
+  };
+
+  // ── Foto del Futuro ───────────────────────────────────────────────────────
+  fotoFuturaRows:   FotoFuturaRow[] = [];
+  fotoFuturaFilter: 'all' | 'agotado' | 'critico' | 'ok' | 'sobra' = 'all';
+  fotoFuturaSearch  = '';
+  readonly CURRENT_WEEK = 20;   // semana actual estimada (mayo 2026 ≈ sem 20)
+  readonly TARGET_WEEK  = 33;   // fin de BTS (sem 33)
+
+  // ── Alertas Proactivas ────────────────────────────────────────────────────
+  alertasRows:       AlertaRow[] = [];
+  alertasTipoFilter: 'all' | 'PICO' | 'VALLE' = 'all';
+  alertasUrgFilter:  'all' | 'alta' | 'media' = 'all';
+  alertasPicoUmbral  = 20;  // % por encima del promedio para alertar PICO
+  alertasValleUmbral = 20;  // % por debajo del promedio para alertar VALLE
 
   // ── Column filters (Excel-style) ───────────────────────────────────────────
   storeFilterOpen: string | null = null;
@@ -141,6 +191,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   pageSize    = 10;
   currentPage = 1;
   totalPages  = 1;
+
+  readonly Math = Math;
+
+  maxOf(arr: number[]): number { return arr.length ? Math.max(...arr) : 1; }
 
   constructor(
     private dataService: DataService,
@@ -173,6 +227,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           this.buildFillRateChart(); this.buildDohDistChart(); this.buildIsChart(); this.buildDesvChart();
         }
       }
+      if (view === 'foto-futuro') this.buildFotoFutura();
+      if (view === 'alertas')     this.buildAlertas();
     });
   }
 
@@ -539,20 +595,15 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       { key: 'green',  label: 'VERDE',    color: '#68D391' },
     ];
 
-    const realItems = this.dataService.getBtsWeekly2026();
+    const storeGroups = this.dataService.getBtsStoreGroups();
 
-    // Si ya llegaron los datos reales, los usamos; si no, fallback a mock
-    if (realItems.length > 0) {
-      const weeks2026 = ['202604','202605','202606','202607','202608','202609','202610','202612'];
-
-      // Solo artículos con urgencia real: DOH ≤ 70 O faltante en 7 días > 0
-      const urgent = realItems.filter(p =>
-        (p.dohAvg > 0 && p.dohAvg <= 70) || p.falta7d > 0
-      );
+    if (storeGroups.length > 0) {
+      // Solo grupos con urgencia real: tiene agotados O faltante en 7 días > 0
+      const urgent = storeGroups.filter(g => g.agotados > 0 || g.falta7d > 0);
 
       // Calcular medianas para líneas de cuadrante
-      const allVentas  = urgent.map(p => weeks2026.reduce((s, w) => s + (p.pos2026[w] || 0), 0));
-      const allAgotadas = urgent.map(p => p.agotados);
+      const allVentas   = urgent.map(g => g.venta8sem);
+      const allAgotadas = urgent.map(g => g.agotados);
       const sortedV = [...allVentas].sort((a, b) => a - b);
       const sortedA = [...allAgotadas].sort((a, b) => a - b);
       const medVentas   = sortedV[Math.floor(sortedV.length / 2)] || 0;
@@ -561,27 +612,26 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       const series = levels.map(lvl => ({
         name: lvl.label,
         data: urgent
-          .filter(p => this.dataService.getDohSemaphore(p.dohAvg) === lvl.key)
-          .map(p => {
-            const ventaSem = weeks2026.reduce((s, w) => s + (p.pos2026[w] || 0), 0);
-            return {
-              x: ventaSem,
-              y: p.agotados,
-              z: Math.max(p.falta7d, 1),
-              name: p.desc,
-              itemNbr: p.itemNbr,
-              doh: p.dohAvg,
-              stores: p.storeCount,
-              agotados: p.agotados,
-              falta7d: p.falta7d,
-              ventaSem
-            };
-          })
+          .filter(g => this.dataService.getDohSemaphore(g.dohAvg) === lvl.key)
+          .map(g => ({
+            x: g.venta8sem,
+            y: g.agotados,
+            z: Math.max(g.falta7d, 1),
+            name: g.desc,
+            itemNbr: g.itemNbr,
+            whseNbr: g.whseNbr,
+            formato: g.formato,
+            doh: g.dohAvg,
+            stores: g.storeCount,
+            agotados: g.agotados,
+            falta7d: g.falta7d,
+            ventaSem: g.venta8sem
+          }))
       })).filter(s => s.data.length > 0);
 
       this.bubbleChartOptions = {
         series,
-        chart:  { type: 'bubble', height: 500, toolbar: { show: false }, animations: { enabled: false },
+        chart: { type: 'bubble', height: 500, toolbar: { show: false }, animations: { enabled: false },
           events: {
             dataPointSelection: (_e: any, _ctx: any, config: any) => {
               const pt = this.bubbleChartOptions.series[config.seriesIndex]?.data[config.dataPointIndex] as any;
@@ -589,29 +639,25 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             }
           }
         },
-        colors: levels.filter(l => urgent.some(p => this.dataService.getDohSemaphore(p.dohAvg) === l.key)).map(l => l.color),
+        colors: levels.filter(l => urgent.some(g => this.dataService.getDohSemaphore(g.dohAvg) === l.key)).map(l => l.color),
         dataLabels: { enabled: false },
-        xaxis:  {
+        xaxis: {
           type: 'numeric', tickAmount: 8,
           title: { text: 'Ventas acumuladas 8 semanas (uds)' },
           labels: { formatter: (v: string) => { const n = Number(v); return n >= 1000 ? (n/1000).toFixed(0)+'k' : n.toFixed(0); } }
         },
-        yaxis:  {
+        yaxis: {
           title: { text: 'Tiendas agotadas (conteo)' }, min: 0, tickAmount: 6,
           labels: { formatter: (v: number) => v.toFixed(0) }
         },
         legend: { position: 'top' },
         annotations: {
           xaxis: [{
-            x: medVentas,
-            borderColor: '#718096',
-            strokeDashArray: 5,
+            x: medVentas, borderColor: '#718096', strokeDashArray: 5,
             label: { text: 'Vol. medio', style: { color: '#fff', background: '#718096', fontSize: '10px' } }
           }],
           yaxis: [{
-            y: medAgotadas,
-            borderColor: '#718096',
-            strokeDashArray: 5,
+            y: medAgotadas, borderColor: '#718096', strokeDashArray: 5,
             label: { text: 'Agotadas medio', style: { color: '#fff', background: '#718096', fontSize: '10px' }, position: 'left' }
           }]
         },
@@ -621,6 +667,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             const pct = d.stores > 0 ? (d.agotados / d.stores * 100).toFixed(1) : '0';
             return `<div class="bts-tooltip">
               <b>${d.name}</b><br>
+              🏭 CEDIS: ${d.whseNbr} · ${d.formato}<br>
               🔴 DOH: ${d.doh.toFixed(1)}d<br>
               📦 Ventas 8 sem: ${d.ventaSem.toLocaleString()} uds<br>
               🏪 Tiendas agotadas: ${d.agotados} / ${d.stores} (${pct}%)<br>
@@ -767,19 +814,24 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   onBubbleClick(pt: any): void {
     this.selectedBubble = {
-      itemNbr:  pt.itemNbr,
-      desc:     pt.name,
-      doh:      pt.doh,
-      agotados: pt.agotados,
-      stores:   pt.stores,
-      falta7d:  pt.falta7d,
+      itemNbr:   pt.itemNbr,
+      desc:      pt.name,
+      whseNbr:   pt.whseNbr,
+      formato:   pt.formato,
+      doh:       pt.doh,
+      agotados:  pt.agotados,
+      stores:    pt.stores,
+      falta7d:   pt.falta7d,
       venta8sem: pt.ventaSem
     };
     this.btsStoreDetail = [];
     this.btsStoreDetailLoading = true;
     this.dataService.loadBtsStoreDetail(pt.itemNbr).subscribe({
       next: (data) => {
-        this.btsStoreDetail = data.stores;
+        // Filtrar solo las tiendas que pertenecen al CEDIS y formato de la burbuja
+        this.btsStoreDetail = data.stores.filter(
+          s => s.whseNbr === pt.whseNbr && s.formato === pt.formato
+        );
         this.btsStoreDetailSort = 'priority';
         this.btsStoreDetailDir = 'asc';
         this.storeFilters = {};
@@ -788,7 +840,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.applyStoreSort();
         this.btsStoreDetailLoading = false;
         this.cdr.detectChanges();
-        // Scroll al panel
         setTimeout(() => {
           const el = document.getElementById('bts-store-detail-panel');
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -969,6 +1020,210 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     };
   }
 
+  // ── Foto del Futuro ────────────────────────────────────────────────────────
+
+  buildFotoFutura(): void {
+    const items2026 = this.dataService.getBtsWeekly2026();
+    const items2024 = this.dataService.getBtsWeekly2024();
+    if (!items2026.length) { this.fotoFuturaRows = []; return; }
+
+    const map2024 = new Map(items2024.map(i => [i.itemNbr, i]));
+    const BTS_WEEKS_2024 = Array.from({ length: 17 }, (_, i) => String(202417 + i)); // w17..w33
+
+    this.fotoFuturaRows = items2026.map(item => {
+      const pipeline = item.inv.onHand + item.inv.inTransit + item.inv.inWhse + item.inv.onOrder;
+      const promSem   = item.promDia * 7;
+      const d2024     = map2024.get(item.itemNbr);
+
+      // Compute scaling factor: promDia 2026 vs avg BTS 2024
+      let scaleFactor = 1;
+      if (d2024) {
+        const bts2024Vals = BTS_WEEKS_2024.map(w => d2024.pos2024[w] || 0).filter(v => v > 0);
+        const avg2024 = bts2024Vals.length ? bts2024Vals.reduce((a, b) => a + b, 0) / bts2024Vals.length : 0;
+        if (avg2024 > 0 && promSem > 0) scaleFactor = promSem / avg2024;
+      }
+
+      // Project consumption for weeks 14..33 (20 weeks)
+      const consumoSem: number[] = [];
+      let remaining = pipeline;
+      let stockoutWeek: number | null = null;
+
+      for (let wNum = 14; wNum <= 33; wNum++) {
+        let weekConsumo: number;
+        const wKey2026 = String(202600 + wNum);
+        const wKey2024 = String(202400 + wNum);
+
+        if (item.fcst2026[wKey2026]) {
+          weekConsumo = item.fcst2026[wKey2026];
+        } else if (d2024 && d2024.pos2024[wKey2024]) {
+          weekConsumo = d2024.pos2024[wKey2024] * scaleFactor;
+        } else {
+          weekConsumo = promSem;
+        }
+
+        consumoSem.push(Math.round(weekConsumo));
+        remaining -= weekConsumo;
+        if (remaining <= 0 && stockoutWeek === null) {
+          stockoutWeek = wNum;
+          remaining = 0;
+        }
+      }
+
+      const acumConsumo = consumoSem.reduce((a, b) => a + b, 0);
+      const remainder33 = pipeline - acumConsumo;
+      const status: FotoFuturaRow['status'] =
+        stockoutWeek !== null && stockoutWeek <= 28 ? 'agotado' :
+        stockoutWeek !== null                       ? 'critico' :
+        remainder33 > promSem * 4                  ? 'sobra'   : 'ok';
+
+      return { itemNbr: item.itemNbr, desc: item.desc, formato: item.formato,
+               pipeline, consumoSem, acumConsumo, remainder33, stockoutWeek, status, promDia: item.promDia };
+    }).sort((a, b) => {
+      const order = { agotado: 0, critico: 1, ok: 2, sobra: 3 };
+      return order[a.status] - order[b.status] || (a.stockoutWeek ?? 99) - (b.stockoutWeek ?? 99);
+    });
+
+    this.cdr.detectChanges();
+  }
+
+  get filteredFotoFutura(): FotoFuturaRow[] {
+    let list = this.fotoFuturaRows;
+    if (this.fotoFuturaFilter !== 'all') list = list.filter(r => r.status === this.fotoFuturaFilter);
+    if (this.fotoFuturaSearch.trim()) {
+      const q = this.fotoFuturaSearch.toLowerCase();
+      list = list.filter(r => r.desc.toLowerCase().includes(q) || String(r.itemNbr).includes(q));
+    }
+    return list;
+  }
+
+  get fotoFuturaKpis() {
+    const rows = this.fotoFuturaRows;
+    return {
+      agotado: rows.filter(r => r.status === 'agotado').length,
+      critico: rows.filter(r => r.status === 'critico').length,
+      ok:      rows.filter(r => r.status === 'ok').length,
+      sobra:   rows.filter(r => r.status === 'sobra').length,
+      total:   rows.length,
+    };
+  }
+
+  // ── Alertas Proactivas ─────────────────────────────────────────────────────
+
+  buildAlertas(): void {
+    const items2026 = this.dataService.getBtsWeekly2026();
+    const items2024 = this.dataService.getBtsWeekly2024();
+    if (!items2026.length || !items2024.length) { this.alertasRows = []; return; }
+
+    const map2026 = new Map(items2026.map(i => [i.itemNbr, i]));
+    const map2024  = new Map(items2024.map(i => [i.itemNbr, i]));
+    const BTS_WEEKS = Array.from({ length: 17 }, (_, i) => 202417 + i); // 17..33
+
+    const alerts: AlertaRow[] = [];
+    const picoThreshold  = 1 + this.alertasPicoUmbral  / 100;
+    const valleThreshold = 1 - this.alertasValleUmbral / 100;
+
+    for (const [itemNbr, item2024] of map2024.entries()) {
+      const item2026 = map2026.get(itemNbr);
+      if (!item2026) continue;
+
+      const btsVals = BTS_WEEKS.map(w => item2024.pos2024[String(w)] || 0);
+      const btsValsPositive = btsVals.filter(v => v > 0);
+      if (!btsValsPositive.length) continue;
+
+      const avg2024BTS = btsValsPositive.reduce((a, b) => a + b, 0) / btsValsPositive.length;
+      const pipeline   = item2026.inv.onHand + item2026.inv.inTransit + item2026.inv.inWhse + item2026.inv.onOrder;
+      const promSem    = item2026.promDia * 7 || avg2024BTS;
+
+      // Scan next 10 weeks from currentWeek+1
+      for (let delta = 1; delta <= 10; delta++) {
+        const wNum   = this.CURRENT_WEEK + delta;
+        if (wNum > this.TARGET_WEEK) break;
+        const wKey24 = String(202400 + wNum);
+        const pos24  = item2024.pos2024[wKey24];
+        if (!pos24) continue;
+
+        const ratio = pos24 / avg2024BTS;
+        let tipo: AlertaRow['tipo'] | null = null;
+        if (ratio >= picoThreshold)  tipo = 'PICO';
+        if (ratio <= valleThreshold) tipo = 'VALLE';
+        if (!tipo) continue;
+
+        // Scale to 2026 estimate
+        const ventaEst = Math.round(pos24 * (promSem / avg2024BTS));
+        const coberturaSem = promSem > 0 ? Math.round(pipeline / promSem * 10) / 10 : 99;
+        const urgencia: AlertaRow['urgencia'] =
+          delta <= 3 ? 'alta' : delta <= 6 ? 'media' : 'baja';
+
+        alerts.push({
+          itemNbr: item2026.itemNbr, desc: item2026.desc, formato: item2026.formato,
+          tipo, semana: wNum, semanasHasta: delta,
+          ratio2024: Math.round(ratio * 100) / 100,
+          ventaEst, stockActual: pipeline, coberturaSem, urgencia
+        });
+      }
+    }
+
+    // Sort: urgencia alta first, then tipo (PICO before VALLE at same urgency), then weeks
+    this.alertasRows = alerts.sort((a, b) => {
+      const uOrd = { alta: 0, media: 1, baja: 2 };
+      return uOrd[a.urgencia] - uOrd[b.urgencia] || a.semanasHasta - b.semanasHasta;
+    });
+    this.cdr.detectChanges();
+  }
+
+  get filteredAlertas(): AlertaRow[] {
+    let list = this.alertasRows;
+    if (this.alertasTipoFilter !== 'all')  list = list.filter(r => r.tipo === this.alertasTipoFilter);
+    if (this.alertasUrgFilter  !== 'all')  list = list.filter(r => r.urgencia === this.alertasUrgFilter);
+    return list;
+  }
+
+  get alertasKpis() {
+    const rows = this.alertasRows;
+    return {
+      picos:   rows.filter(r => r.tipo === 'PICO' && r.urgencia === 'alta').length,
+      valles:  rows.filter(r => r.tipo === 'VALLE' && r.urgencia === 'alta').length,
+      mediaAlta: rows.filter(r => r.urgencia !== 'baja').length,
+      total:   rows.length,
+    };
+  }
+
+  rebuildAlertas(): void {
+    this.buildAlertas();
+  }
+
+  // ── No Enviar: recomendación calculada para la burbuja seleccionada ─────────
+
+  get noEnviarRecomendacion(): { decision: 'ENVIAR' | 'NO ENVIAR' | 'REVISAR'; razon: string; detalle: string[] } | null {
+    if (!this.selectedBubble) return null;
+    const b = this.selectedBubble;
+    const c = this.noEnviarConfig;
+    const pctAgotadas = b.stores > 0 ? (b.agotados / b.stores) * 100 : 0;
+    const detalle: string[] = [
+      `Tiendas agotadas: ${b.agotados} de ${b.stores} (${pctAgotadas.toFixed(1)}%) — umbral mín: ${c.minPctAgotadas}%`,
+      `Faltante 7D total: ${b.falta7d.toLocaleString()} uds — umbral mín: ${c.minFalta7d} uds`,
+      `Tiendas agotadas absolutas: ${b.agotados} — umbral mín: ${c.minTiendasAgot}`,
+    ];
+    const cumplePct   = pctAgotadas >= c.minPctAgotadas;
+    const cumpleFalta = b.falta7d   >= c.minFalta7d;
+    const cumpleAbs   = b.agotados  >= c.minTiendasAgot;
+    const cumpleAll   = cumplePct && cumpleFalta && cumpleAbs;
+    const cumpleAlguno = cumplePct || cumpleFalta || cumpleAbs;
+
+    if (cumpleAll) {
+      return { decision: 'ENVIAR', razon: 'Todos los umbrales se cumplen — justifica generar la orden', detalle };
+    }
+    if (cumpleAlguno) {
+      const faltantes = [
+        !cumplePct   && `% agotadas insuficiente (${pctAgotadas.toFixed(1)}% < ${c.minPctAgotadas}%)`,
+        !cumpleFalta && `faltante 7D insuficiente (${b.falta7d} < ${c.minFalta7d} uds)`,
+        !cumpleAbs   && `pocas tiendas agotadas (${b.agotados} < ${c.minTiendasAgot})`,
+      ].filter(Boolean).join('; ');
+      return { decision: 'REVISAR', razon: `Cumple parcialmente — revisa: ${faltantes}`, detalle };
+    }
+    return { decision: 'NO ENVIAR', razon: 'Ningún umbral se cumple — enviar sobreinventariaría el CEDIS', detalle };
+  }
+
   // ── Sugerido de Compra ────────────────────────────────────────────────────
 
   onSugeridoFileChange(event: Event): void {
@@ -1052,46 +1307,61 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   preprocessWalmartWeeklyFormat(rows: any[], posKeys: string[], ohKeys: string[]): any[] {
-    // Sort weeks ascending
     posKeys.sort();
     ohKeys.sort();
 
+    // Normalize helper: lowercase, strip spaces/dashes/underscores/dots
+    const norm = (s: string) => s.toLowerCase().trim().replace(/[\s_\-\.#]+/g, '');
+
+    // Alias-based column finder — returns the matching key from the row, or undefined
+    const findKey = (keys: string[], aliases: string[]): string | undefined =>
+      keys.find(k => aliases.some(a => norm(k) === norm(a) || norm(k).includes(norm(a)) || norm(a).includes(norm(k))));
+
+    const keys = Object.keys(rows[0] || {});
+    const storeNbrKey  = findKey(keys, ['Store Nbr','StoreNbr','Tienda','Store','storenb']);
+    const storeNameKey = findKey(keys, ['Store Name','StoreName','Nombre Tienda','store name']);
+    const formatoKey   = findKey(keys, ['Store Type Descr','StoreTypeDescr','Formato','Store Type','storetypedescr','tipo']);
+    const whseNbrKey   = findKey(keys, ['Whse Nbr','WhseNbr','CEDIS','Cedis','WH','Whse','whnbr','warehouse','almacen','dc']);
+    const itemNbrKey   = findKey(keys, ['Item Nbr','ItemNbr','Articulo','Item','itemnb','sku']);
+    const itemDescKey  = findKey(keys, ['Item Desc 1','ItemDesc1','Item Desc','Descripcion','itemdesc','desc']);
+    const vndpkKey     = findKey(keys, ['VNPK Qty','VNPKQty','Vnpk Qty','vnpk','vndpk','VndpkQty']);
+    const whpckKey     = findKey(keys, ['WHPK Qty','WHPKQty','Whpk Qty','whpk','whpck','WhpckQty']);
+
+    const colVal = (row: any, key: string | undefined, defaultVal: any = '') =>
+      key ? (row[key] ?? defaultVal) : defaultVal;
+
     return rows.map(row => {
-      // promDia = average of all weekly POS / 7
       const posVals = posKeys.map((k: string) => parseFloat(String(row[k])) || 0);
       const totalPos = posVals.reduce((a: number, b: number) => a + b, 0);
       const weeksWithSales = posVals.filter((v: number) => v > 0).length || 1;
       const promDia = (totalPos / weeksWithSales) / 7;
 
-      // onHand = last available Hist On Hand (most recent week)
       let onHand = 0;
       for (let i = ohKeys.length - 1; i >= 0; i--) {
         const v = parseFloat(String(row[ohKeys[i]])) || 0;
         if (v > 0) { onHand = v; break; }
       }
-      // If still 0, use last column regardless
       if (onHand === 0 && ohKeys.length > 0) {
         onHand = parseFloat(String(row[ohKeys[ohKeys.length - 1]])) || 0;
       }
 
-      // pos2sem = sum of last 2 weeks POS
       const pos2sem = posKeys.slice(-2).reduce((s: number, k: string) => s + (parseFloat(String(row[k])) || 0), 0);
 
       return {
-        'storeNbr':   row['Store Nbr']        ?? row['store nbr']   ?? '',
-        'storeName':  row['Store Name']        ?? row['store name']  ?? '',
-        'formato':    row['Store Type Descr']  ?? row['store type descr'] ?? '',
-        'whseNbr':    row['Whse Nbr']          ?? row['whse nbr']    ?? 0,
-        'itemNbr':    row['Item Nbr']          ?? row['item nbr']    ?? '',
-        'itemDesc':   row['Item Desc 1']       ?? row['item desc 1'] ?? '',
-        'vndpk':      row['VNPK Qty']          ?? row['vnpk qty']    ?? 0,
-        'whpck':      row['WHPK Qty']          ?? row['whpk qty']    ?? 0,
-        'onHand':     onHand,
-        'inTransit':  0,
-        'inWhse':     0,
-        'onOrder':    0,
-        'promDia':    promDia,
-        'pos2sem':    pos2sem,
+        'storeNbr':  colVal(row, storeNbrKey,  ''),
+        'storeName': colVal(row, storeNameKey, ''),
+        'formato':   colVal(row, formatoKey,   ''),
+        'whseNbr':   colVal(row, whseNbrKey,   0),
+        'itemNbr':   colVal(row, itemNbrKey,   ''),
+        'itemDesc':  colVal(row, itemDescKey,  ''),
+        'vndpk':     colVal(row, vndpkKey,     0),
+        'whpck':     colVal(row, whpckKey,     0),
+        'onHand':    onHand,
+        'inTransit': 0,
+        'inWhse':    0,
+        'onOrder':   0,
+        'promDia':   promDia,
+        'pos2sem':   pos2sem,
       };
     }).filter(r => r['storeNbr'] !== '' && r['itemNbr'] !== '');
   }
@@ -1101,7 +1371,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       storeNbr:  ['storenb','tienda','store_nbr','store','nbr_tienda','num_tienda','no_tienda','nbr_store','storenbr'],
       storeName: ['storename','nombre_tienda','store_name','nombre','name','store name'],
       formato:   ['formato','format','tipo_tienda','tipo','store type descr','storetypedescr'],
-      whseNbr:   ['whsenb','cedis','wh','warehouse','cedis_nbr','almacen','nbr_cedis','whse nbr','whsenbr'],
+      whseNbr:   ['whse nbr','whsenbr','whsenb','cedis nbr','cedisnbr','cedis','wh nbr','whnbr','warehouse nbr','warehousenb','almacen','nbr cedis','nbrcedis','whsenum','whse num','dc nbr','dcnbr'],
       itemNbr:   ['itemnb','articulo','item_nbr','sku','item','art','nbr_art','item nbr','itemnbr'],
       itemDesc:  ['itemdesc','descripcion','item_desc','desc','description','nombre_art','item desc 1','itemdesc1'],
       onHand:    ['onhand','inv_mano','oh','on_hand','inventario','stock','fisico'],
@@ -1138,7 +1408,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     // Show warning if critical columns missing
-    const missing = ['storeNbr','itemNbr','promDia','onHand'].filter(f => !fieldMap[f]);
+    const criticalFields  = ['storeNbr','itemNbr','promDia','onHand'];
+    const optionalFields  = ['whseNbr'];
+    const missing         = criticalFields.filter(f => !fieldMap[f]);
+    const missingOptional = optionalFields.filter(f => !fieldMap[f]);
     if (missing.length === 4) {
       // Nothing matched — show column names to help user
       const cols = headerKeys.slice(0, 10).join(', ');
@@ -1147,8 +1420,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       this.cdr.detectChanges();
       return;
     }
-    this.sugeridoColWarning = missing.length > 0
-      ? `Columnas no encontradas: ${missing.join(', ')} — usando valor 0. Columnas detectadas: ${headerKeys.join(', ')}`
+    const allMissing = [...missing, ...missingOptional];
+    this.sugeridoColWarning = allMissing.length > 0
+      ? `Columnas no encontradas: ${allMissing.join(', ')} — usando valor 0. Columnas del archivo: ${headerKeys.join(', ')}`
       : '';
 
     const num = (row: any, field: string): number => {
@@ -1189,11 +1463,19 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       const flagAgotarse   = coberturaActual < leadTime;
       const flagIncremento = sugeridoVndpk > vndpk;
 
+      const rawStoreNbr  = num(row, 'storeNbr');
+      const catalog      = this.dataService.getStoreCatalog();
+      const catalogEntry = catalog.get(rawStoreNbr);
+
+      const resolvedName   = str(row, 'storeName') || catalogEntry?.storeName || `Tienda ${rawStoreNbr}`;
+      const resolvedFormato = str(row, 'formato') || catalogEntry?.formato || 'N/A';
+      const resolvedWhse   = catalogEntry?.whseNbr || num(row, 'whseNbr') || 0;
+
       return {
-        storeNbr: num(row, 'storeNbr'),
-        storeName: str(row, 'storeName') || `Tienda ${num(row, 'storeNbr')}`,
-        formato: str(row, 'formato') || 'N/A',
-        whseNbr: num(row, 'whseNbr'),
+        storeNbr: rawStoreNbr,
+        storeName: resolvedName,
+        formato: resolvedFormato,
+        whseNbr: resolvedWhse,
         itemNbr: num(row, 'itemNbr'),
         itemDesc: str(row, 'itemDesc') || `Artículo ${num(row, 'itemNbr')}`,
         onHand, inTransit, inWhse, onOrder,
